@@ -2288,3 +2288,67 @@ These are applied via global CSS classes (`.status-intake`, `.status-in-progress
 - The test was run with Imperial theme active, which uses different color values than the default theme
 - All three themes (default, imperial, arcane) define the same color variables with theme-appropriate values
 - The bug fix ensures status badges display correctly for all status types across the application
+
+---
+
+## TEST: facet-kn1 - Modal closes on backdrop click
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/ (Workboard)
+2. Clicked "+ New" button to open intake form modal
+3. Verified modal opened correctly with dark backdrop visible
+4. Clicked on dark backdrop area (outside modal content, ~x=1000)
+5. Verified modal closed successfully
+6. Navigated to http://localhost:5173/search and searched for "JR"
+7. Clicked on ticket JR-0002 to open ticket detail modal
+8. Verified modal opened correctly with dark backdrop visible
+9. Clicked on dark backdrop area (outside modal content, ~x=1200)
+10. Verified modal closed successfully
+11. Re-opened ticket detail modal
+12. Clicked on "Customer" heading inside modal content
+13. Verified modal stayed open (clicking inside does not close)
+14. Clicked on "Item Details" heading inside modal content
+15. Verified modal stayed open
+16. Re-opened intake form modal on workboard
+17. Clicked on "Customer Information" and "Repair Details" headings inside modal
+18. Verified modal stayed open for all content clicks
+
+### Success Criteria Results
+- [x] Clicking backdrop closes intake form modal - **PASS** - Modal closed when clicking at x=1000, y=400 (outside modal area)
+- [x] Clicking backdrop closes ticket detail modal - **PASS** - Modal closed when clicking at x=1200, y=400 (outside modal area)
+- [x] Clicking inside modal content does NOT close it - **PASS** - Tested multiple clicks on headings/content areas, modal remained open
+- [x] Backdrop click behavior consistent across modals - **PASS** - Both modals (intake form & ticket detail) behave identically
+
+### Screenshots
+- .playwright-mcp/modal-backdrop-intake-form.png - Intake form modal with dark backdrop visible
+- .playwright-mcp/modal-backdrop-ticket-detail.png - Ticket detail modal with dark backdrop visible
+
+### Technical Details
+The modal backdrop functionality is implemented in `apps/web/src/lib/components/Modal.svelte`:
+- Uses native HTML `<dialog>` element with `showModal()` method
+- Backdrop is rendered via `::backdrop` CSS pseudo-element (built-in browser feature)
+- Backdrop click detection in `handleBackdropClick()` function:
+  ```javascript
+  function handleBackdropClick(event: MouseEvent) {
+    // Only close if clicking the backdrop (dialog element itself, not content)
+    if (event.target === dialogEl && closeOnBackdrop) {
+      requestClose();
+    }
+  }
+  ```
+- The `closeOnBackdrop` prop defaults to `true` (line 12, 23)
+- Click target comparison (`event.target === dialogEl`) ensures clicks inside modal content don't trigger close
+
+Both `IntakeFormModal` and `TicketDetailModal` use the base `Modal.svelte` component, ensuring consistent backdrop behavior.
+
+### Notes
+- The native `<dialog>` element provides accessibility benefits including focus trapping and proper ARIA semantics
+- Backdrop styling is defined in CSS using `::backdrop` pseudo-element with fade-in animation
+- The `closeOnEsc` prop also defaults to `true`, allowing ESC key to close modals (tested in separate issue facet-cy6)
+- Ticket cards on the workboard navigate to a dedicated ticket page (`/tickets/:id`) rather than opening a modal
+- TicketDetailModal is accessed through the Search page results
+
+---
