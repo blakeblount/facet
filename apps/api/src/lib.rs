@@ -3,10 +3,14 @@
 //! This crate provides the REST API for the Facet application.
 
 pub mod config;
+pub mod error;
 pub mod handlers;
 pub mod models;
+pub mod response;
 pub mod routes;
 pub mod services;
 
 pub use config::Config;
+pub use error::{codes as error_codes, AppError};
+pub use response::{created, empty, no_content, ok, ApiResponse, ApiResult};
 pub use routes::api_router;
