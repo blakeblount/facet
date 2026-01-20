@@ -55,7 +55,8 @@ pub fn api_router(state: AppState) -> Router {
         )
         .route("/{ticket_id}/receipt.pdf", get(handlers::get_receipt_pdf))
         .route("/{ticket_id}/label.pdf", get(handlers::get_label_pdf))
-        .route("/{ticket_id}/status", post(handlers::change_status));
+        .route("/{ticket_id}/status", post(handlers::change_status))
+        .route("/{ticket_id}/close", post(handlers::close_ticket));
 
     // Queue route
     let queue_route = Router::new().route("/", get(handlers::get_queue));

@@ -1085,6 +1085,91 @@ pub async fn get_queue(State(state): State<AppState>) -> Result<impl IntoRespons
 }
 
 // =============================================================================
+// POST /tickets/:ticket_id/close - Close Ticket
+// =============================================================================
+
+/// Request body for closing a ticket.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CloseTicketRequest {
+    /// The actual amount charged for the repair work (required)
+    pub actual_amount: Decimal,
+}
+
+/// Response for a closed ticket.
+#[derive(Debug, Clone, Serialize)]
+pub struct CloseTicketResponse {
+    /// The closed ticket
+    #[serde(flatten)]
+    pub ticket: Ticket,
+    /// The previous status before closing
+    pub previous_status: TicketStatus,
+}
+
+/// POST /api/v1/tickets/:ticket_id/close - Close a ticket.
+///
+/// Closes the ticket with the actual amount charged.
+/// Requires X-Employee-ID header for attribution.
+/// Only tickets with status ReadyForPickup can be closed.
+pub async fn close_ticket(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(ticket_id): Path<Uuid>,
+    Json(body): Json<CloseTicketRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // 1. Extract and validate employee ID from header
+    let employee_id = extract_employee_id(&headers)?;
+
+    // Verify employee exists and is active
+    let employee = EmployeeRepository::find_active_by_id(&state.db, employee_id)
+        .await?
+        .ok_or_else(|| AppError::validation("Employee not found or inactive"))?;
+
+    // 2. Find the ticket
+    let existing_ticket = TicketRepository::find_by_id(&state.db, ticket_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Ticket not found"))?;
+
+    let previous_status = existing_ticket.status;
+
+    // 3. Validate ticket is in ReadyForPickup status
+    if previous_status != TicketStatus::ReadyForPickup {
+        return Err(AppError::validation(format!(
+            "Only tickets with status 'ready_for_pickup' can be closed, current status is '{}'",
+            serde_json::to_string(&previous_status).unwrap_or_else(|_| "unknown".to_string())
+        )));
+    }
+
+    // 4. Close the ticket
+    let closed_ticket = TicketRepository::close(
+        &state.db,
+        ticket_id,
+        body.actual_amount,
+        employee.employee_id,
+    )
+    .await?;
+
+    // 5. Create status history entry
+    StatusHistoryRepository::create(
+        &state.db,
+        CreateStatusHistory {
+            ticket_id,
+            from_status: Some(previous_status),
+            to_status: TicketStatus::Closed,
+            changed_by: employee.employee_id,
+        },
+    )
+    .await?;
+
+    // 6. Return closed ticket with previous status
+    let response = CloseTicketResponse {
+        ticket: closed_ticket,
+        previous_status,
+    };
+
+    Ok(Json(ApiResponse::success(response)))
+}
+
+// =============================================================================
 // POST /tickets/:ticket_id/status - Change Ticket Status
 // =============================================================================
 
@@ -1607,5 +1692,75 @@ mod tests {
         let json = r#"{"status": "invalid"}"#;
         let result: Result<ChangeStatusRequest, _> = serde_json::from_str(json);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_close_ticket_request_deserialize() {
+        let json = r#"{"actual_amount": 145.00}"#;
+        let request: CloseTicketRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.actual_amount, Decimal::new(14500, 2));
+    }
+
+    #[test]
+    fn test_close_ticket_request_deserialize_zero() {
+        let json = r#"{"actual_amount": 0}"#;
+        let request: CloseTicketRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.actual_amount, Decimal::ZERO);
+    }
+
+    #[test]
+    fn test_close_ticket_request_deserialize_decimal() {
+        let json = r#"{"actual_amount": 99.99}"#;
+        let request: CloseTicketRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.actual_amount, Decimal::new(9999, 2));
+    }
+
+    #[test]
+    fn test_close_ticket_request_missing_amount() {
+        let json = r#"{}"#;
+        let result: Result<CloseTicketRequest, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_close_ticket_response_serialization() {
+        use chrono::TimeZone;
+
+        let ticket = Ticket {
+            ticket_id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
+            friendly_code: "JR-TEST1".to_string(),
+            customer_id: Uuid::parse_str("660e8400-e29b-41d4-a716-446655440000").unwrap(),
+            item_type: Some("ring".to_string()),
+            item_description: "Gold ring".to_string(),
+            condition_notes: "Good condition".to_string(),
+            requested_work: "Resize".to_string(),
+            status: TicketStatus::Closed,
+            is_rush: false,
+            promise_date: None,
+            storage_location_id: Uuid::parse_str("770e8400-e29b-41d4-a716-446655440000").unwrap(),
+            quote_amount: Some(Decimal::new(10000, 2)),
+            actual_amount: Some(Decimal::new(14500, 2)),
+            taken_in_by: Uuid::parse_str("880e8400-e29b-41d4-a716-446655440000").unwrap(),
+            worked_by: None,
+            closed_by: Some(Uuid::parse_str("880e8400-e29b-41d4-a716-446655440000").unwrap()),
+            last_modified_by: Some(
+                Uuid::parse_str("880e8400-e29b-41d4-a716-446655440000").unwrap(),
+            ),
+            created_at: Utc.with_ymd_and_hms(2025, 1, 1, 12, 0, 0).unwrap(),
+            updated_at: Utc.with_ymd_and_hms(2025, 1, 2, 12, 0, 0).unwrap(),
+            closed_at: Some(Utc.with_ymd_and_hms(2025, 1, 2, 12, 0, 0).unwrap()),
+            queue_position: None,
+        };
+
+        let response = CloseTicketResponse {
+            ticket,
+            previous_status: TicketStatus::ReadyForPickup,
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"ticket_id\":\"550e8400-e29b-41d4-a716-446655440000\""));
+        assert!(json.contains("\"status\":\"closed\""));
+        assert!(json.contains("\"actual_amount\":\"145.00\""));
+        assert!(json.contains("\"previous_status\":\"ready_for_pickup\""));
     }
 }

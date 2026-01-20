@@ -114,6 +114,37 @@ impl TicketRepository {
         Ok(ticket)
     }
 
+    /// Close a ticket.
+    ///
+    /// Sets the status to Closed, records the actual amount, and sets closed_at/closed_by.
+    pub async fn close(
+        pool: &PgPool,
+        ticket_id: Uuid,
+        actual_amount: rust_decimal::Decimal,
+        closed_by: Uuid,
+    ) -> Result<Ticket, AppError> {
+        let ticket = sqlx::query_as::<_, Ticket>(
+            r#"
+            UPDATE tickets SET
+                status = 'closed',
+                actual_amount = $2,
+                closed_by = $3,
+                closed_at = NOW(),
+                last_modified_by = $3,
+                updated_at = NOW()
+            WHERE ticket_id = $1
+            RETURNING *
+            "#,
+        )
+        .bind(ticket_id)
+        .bind(actual_amount)
+        .bind(closed_by)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(ticket)
+    }
+
     /// Update a ticket.
     ///
     /// Only non-None fields in the input will be updated.

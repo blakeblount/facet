@@ -6,6 +6,6 @@
 pub mod tickets;
 
 pub use tickets::{
-    change_status, create_ticket, get_label_pdf, get_queue, get_receipt_pdf, get_ticket,
-    list_tickets, update_ticket,
+    change_status, close_ticket, create_ticket, get_label_pdf, get_queue, get_receipt_pdf,
+    get_ticket, list_tickets, update_ticket,
 };
