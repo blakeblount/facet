@@ -9,7 +9,7 @@ pub mod employees;
 pub mod tickets;
 
 pub use admin::{admin_setup, change_pin};
-pub use customers::search_customers;
+pub use customers::{get_customer, search_customers};
 pub use employees::{create_employee, delete_employee, update_employee, verify_employee_pin};
 pub use tickets::{
     add_note, change_status, close_ticket, create_ticket, delete_photo, get_label_pdf, get_queue,

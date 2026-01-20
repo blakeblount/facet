@@ -1,11 +1,12 @@
 //! Customer request handlers.
 
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     response::IntoResponse,
     Json,
 };
 use serde::Deserialize;
+use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::models::customer::CustomerSearchParams;
@@ -55,6 +56,31 @@ pub async fn search_customers(
     let customers = CustomerRepository::search_with_ticket_count(&state.db, params).await?;
 
     Ok(Json(ApiResponse::success(customers)))
+}
+
+// =============================================================================
+// GET /customers/:customer_id - Customer Detail with Ticket History
+// =============================================================================
+
+/// GET /api/v1/customers/:customer_id - Get customer with ticket history.
+///
+/// Returns the customer details along with a summary list of their tickets,
+/// sorted by created_at descending (most recent first).
+///
+/// # Path Parameters
+/// - `customer_id`: UUID of the customer to retrieve
+///
+/// # Returns
+/// Customer data with their ticket history included.
+pub async fn get_customer(
+    State(state): State<AppState>,
+    Path(customer_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let customer_with_tickets = CustomerRepository::get_with_tickets(&state.db, customer_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Customer not found"))?;
+
+    Ok(Json(ApiResponse::success(customer_with_tickets)))
 }
 
 #[cfg(test)]
