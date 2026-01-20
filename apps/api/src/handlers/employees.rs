@@ -1,12 +1,17 @@
 //! Employee request handlers.
 
-use axum::{extract::State, http::HeaderMap, response::IntoResponse, Json};
+use axum::{
+    extract::{Path, State},
+    http::HeaderMap,
+    response::IntoResponse,
+    Json,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::auth::verify_pin;
 use crate::error::AppError;
-use crate::models::employee::{CreateEmployee, EmployeeRole, EmployeeSummary};
+use crate::models::employee::{CreateEmployee, EmployeeRole, EmployeeSummary, UpdateEmployee};
 use crate::repositories::{EmployeeRepository, StoreSettingsRepository};
 use crate::response::{created, ApiResponse};
 use crate::routes::AppState;
@@ -124,6 +129,58 @@ pub async fn create_employee(
     };
 
     Ok(created(summary))
+}
+
+// =============================================================================
+// PUT /employees/:employee_id (admin) - Update Employee
+// =============================================================================
+
+/// PUT /api/v1/employees/:employee_id - Update an employee (admin only).
+///
+/// Requires X-Admin-PIN header for authorization.
+/// Updates employee fields: name, role, is_active.
+/// If PIN is provided, it's re-hashed before storage.
+///
+/// Returns the updated employee (without pin_hash).
+pub async fn update_employee(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(employee_id): Path<Uuid>,
+    Json(body): Json<UpdateEmployee>,
+) -> Result<impl IntoResponse, AppError> {
+    // Verify admin PIN
+    verify_admin_pin_header(&state, &headers).await?;
+
+    // Validate input - if name is provided, it shouldn't be empty
+    if let Some(ref name) = body.name {
+        if name.trim().is_empty() {
+            return Err(AppError::validation("Name cannot be empty"));
+        }
+    }
+
+    // Validate input - if PIN is provided, it shouldn't be empty
+    if let Some(ref pin) = body.pin {
+        if pin.is_empty() {
+            return Err(AppError::validation("PIN cannot be empty"));
+        }
+    }
+
+    // Update the employee
+    let employee = EmployeeRepository::update(&state.db, employee_id, body).await?;
+
+    match employee {
+        Some(emp) => {
+            // Return as EmployeeSummary (without pin_hash)
+            let summary = EmployeeSummary {
+                employee_id: emp.employee_id,
+                name: emp.name,
+                role: emp.role,
+                is_active: emp.is_active,
+            };
+            Ok(Json(ApiResponse::success(summary)))
+        }
+        None => Err(AppError::not_found("Employee not found")),
+    }
 }
 
 #[cfg(test)]
@@ -250,5 +307,60 @@ mod tests {
         let json = serde_json::to_string(&summary).unwrap();
         assert!(json.contains("\"is_active\":false"));
         assert!(json.contains("\"role\":\"admin\""));
+    }
+
+    // Tests for UpdateEmployee deserialization
+
+    #[test]
+    fn test_update_employee_deserialize_empty_body() {
+        let json = r#"{}"#;
+        let input: UpdateEmployee = serde_json::from_str(json).unwrap();
+        assert!(input.name.is_none());
+        assert!(input.pin.is_none());
+        assert!(input.role.is_none());
+        assert!(input.is_active.is_none());
+    }
+
+    #[test]
+    fn test_update_employee_deserialize_name_only() {
+        let json = r#"{"name": "New Name"}"#;
+        let input: UpdateEmployee = serde_json::from_str(json).unwrap();
+        assert_eq!(input.name, Some("New Name".to_string()));
+        assert!(input.pin.is_none());
+        assert!(input.role.is_none());
+        assert!(input.is_active.is_none());
+    }
+
+    #[test]
+    fn test_update_employee_deserialize_with_pin() {
+        let json = r#"{"pin": "9999"}"#;
+        let input: UpdateEmployee = serde_json::from_str(json).unwrap();
+        assert!(input.name.is_none());
+        assert_eq!(input.pin, Some("9999".to_string()));
+    }
+
+    #[test]
+    fn test_update_employee_deserialize_role_change() {
+        let json = r#"{"role": "admin"}"#;
+        let input: UpdateEmployee = serde_json::from_str(json).unwrap();
+        assert!(input.name.is_none());
+        assert_eq!(input.role, Some(EmployeeRole::Admin));
+    }
+
+    #[test]
+    fn test_update_employee_deserialize_deactivate() {
+        let json = r#"{"is_active": false}"#;
+        let input: UpdateEmployee = serde_json::from_str(json).unwrap();
+        assert_eq!(input.is_active, Some(false));
+    }
+
+    #[test]
+    fn test_update_employee_deserialize_full_update() {
+        let json = r#"{"name": "Updated Name", "pin": "5678", "role": "staff", "is_active": true}"#;
+        let input: UpdateEmployee = serde_json::from_str(json).unwrap();
+        assert_eq!(input.name, Some("Updated Name".to_string()));
+        assert_eq!(input.pin, Some("5678".to_string()));
+        assert_eq!(input.role, Some(EmployeeRole::Staff));
+        assert_eq!(input.is_active, Some(true));
     }
 }

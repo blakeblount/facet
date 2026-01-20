@@ -13,7 +13,7 @@
 mod health;
 
 use axum::{
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
     Router,
 };
 use sqlx::postgres::PgPool;
@@ -82,6 +82,7 @@ pub fn api_router(state: AppState) -> Router {
     // Employee routes
     let employees_routes = Router::new()
         .route("/", post(handlers::create_employee))
+        .route("/{employee_id}", put(handlers::update_employee))
         .route("/verify", post(handlers::verify_employee_pin));
 
     // Admin routes
