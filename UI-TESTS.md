@@ -378,3 +378,39 @@ After completing each test, append results to this file using this format:
 - Multiple matching customers display in a scrollable list
 - API endpoint /api/v1/customers?search=<query> works correctly with partial matching
 
+---
+
+## TEST: facet-19y - Ticket detail modal opens from workboard
+**Date:** 2026-01-20
+**Status:** BLOCKED
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/
+2. Verified workboard loaded with 2 tickets in Intake lane
+3. Clicked on ticket card "JR-0001 John Smith Gold wedding band"
+4. Observed behavior: Browser navigated to /tickets/792dd6bc-32af-4ffa-a487-66fdd67e5523
+5. Page displayed "Ticket detail page coming soon." placeholder
+
+### Success Criteria Results
+- [ ] Clicking ticket card opens detail modal - **FAIL** - Navigates to separate page instead of opening modal
+- [ ] Modal has overlay backdrop - **N/A** - No modal implementation on workboard
+- [ ] Modal contains ticket information - **N/A** - Page shows placeholder only
+- [ ] Close button (X) is visible - **N/A**
+- [ ] Clicking backdrop or X closes the modal - **N/A**
+- [ ] ESC key closes the modal - **N/A**
+
+### Screenshots
+- .playwright-mcp/.playwright-mcp/ticket-detail-page-placeholder.png
+
+### Issues Found
+- **HIGH**: Ticket detail modal not integrated with workboard. Current implementation uses page navigation (/tickets/[id]) instead of modal overlay.
+- **HIGH**: Ticket detail page is a placeholder with no functionality ("Ticket detail page coming soon.")
+
+### Notes
+- A fully-implemented `TicketDetailModal.svelte` component exists in `apps/web/src/lib/components/` with all expected functionality (customer info, item details, photos, pricing, status history, notes, action buttons)
+- The workboard page (`+page.svelte`) uses `navigateToTicket(ticketId)` function which redirects to `/tickets/[id]` page
+- The TicketDetailModal component is not imported or used in the workboard page
+- Integration work required: Either wire up TicketDetailModal to the workboard, or complete the /tickets/[id] page using the same component
+- Recommendation: Change workboard to open TicketDetailModal on ticket click (preserves workboard context, better UX for quick reference)
+
