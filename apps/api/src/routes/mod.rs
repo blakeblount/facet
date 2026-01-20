@@ -80,7 +80,9 @@ pub fn api_router(state: AppState) -> Router {
     let queue_route = Router::new().route("/", get(handlers::get_queue));
 
     // Employee routes
-    let employees_routes = Router::new().route("/verify", post(handlers::verify_employee_pin));
+    let employees_routes = Router::new()
+        .route("/", post(handlers::create_employee))
+        .route("/verify", post(handlers::verify_employee_pin));
 
     // API v1 routes
     let api_v1 = Router::new()
