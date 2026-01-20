@@ -1,5 +1,6 @@
 <script lang="ts">
 	import favicon from '$lib/assets/favicon.svg';
+	import { ReloadPrompt, InstallPrompt } from '$lib/pwa';
 
 	let { children } = $props();
 </script>
@@ -9,3 +10,6 @@
 </svelte:head>
 
 {@render children()}
+
+<ReloadPrompt />
+<InstallPrompt />
