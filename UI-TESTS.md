@@ -243,3 +243,45 @@ After completing each test, append results to this file using this format:
 - Quote Amount field is optional but validates format if provided
 - When all fields are valid, form proceeds to Employee PIN verification step
 
+---
+
+## TEST: facet-7vm - Submit intake form triggers PIN verification
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/
+2. Clicked "+ New" button to open intake form modal
+3. Filled Customer Name with "PIN Test Customer"
+4. Filled Item Description with "Diamond engagement ring"
+5. Filled Condition Notes with "Good condition, minor scratches on band"
+6. Filled Requested Work with "Clean and polish, check prongs"
+7. Selected "Safe Drawer 1" from Storage Location dropdown
+8. Uploaded test photo (pin-test-image.png)
+9. Clicked "Create & Print" button
+10. Observed PIN verification modal appeared
+
+### Success Criteria Results
+- [x] After clicking Submit, PIN verification modal appears - PASS - Modal appears immediately after clicking "Create & Print"
+- [x] PIN modal has title "Verify Employee PIN" or similar - PASS - Title is "Enter Employee PIN"
+- [x] PIN input field is present (password type, obscured) - PASS - Input has type="password" with placeholder "Enter your PIN"
+- [x] Cancel button is available - PASS - Cancel button present
+- [x] Verify button is available - PASS - Verify button present
+- [x] PIN input is auto-focused - PASS - Input has [active] state indicating focus
+- [x] Form data is preserved while PIN modal is open - PASS - Intake form modal remains open behind PIN modal with all filled data intact
+
+### Screenshots
+- .playwright-mcp/pin-modal-verification.png
+
+### Issues Found
+- None
+
+### Notes
+- The PIN modal is implemented as a separate dialog that overlays the intake form
+- The intake form remains visible but dimmed behind the PIN modal
+- All form data (customer info, item details, photos) is preserved during PIN verification
+- The modal title "Enter Employee PIN" clearly indicates the purpose
+- Password input properly obscures entered characters for security
+- Both Cancel and Verify buttons are clearly visible and accessible
+
