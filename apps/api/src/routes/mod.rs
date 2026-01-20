@@ -104,7 +104,10 @@ pub fn api_router(state: AppState) -> Router {
         .route("/change-pin", post(handlers::change_pin));
 
     // Settings routes
-    let settings_routes = Router::new().route("/", get(handlers::get_settings));
+    let settings_routes = Router::new().route(
+        "/",
+        get(handlers::get_settings).put(handlers::update_settings),
+    );
 
     // API v1 routes
     let api_v1 = Router::new()
