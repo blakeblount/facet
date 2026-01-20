@@ -9,6 +9,7 @@ pub mod status_history;
 pub mod storage_location;
 pub mod store_settings;
 pub mod ticket;
+pub mod ticket_note;
 pub mod ticket_photo;
 
 pub use customer::{CreateCustomer, Customer};
@@ -25,4 +26,5 @@ pub use ticket::{
     CreateTicket, QueueTicket, Ticket, TicketFilters, TicketSearchParams, TicketStatus,
     TicketSummary, UpdateTicket, WorkboardQueue,
 };
+pub use ticket_note::{CreateTicketNote, TicketNote};
 pub use ticket_photo::{CreateTicketPhoto, TicketPhoto, TicketPhotoSummary};

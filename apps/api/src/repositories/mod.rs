@@ -10,6 +10,7 @@ pub mod status_history;
 pub mod storage_location;
 pub mod store_settings;
 pub mod ticket;
+pub mod ticket_note;
 pub mod ticket_photo;
 
 pub use customer::CustomerRepository;
@@ -19,4 +20,5 @@ pub use status_history::StatusHistoryRepository;
 pub use storage_location::StorageLocationRepository;
 pub use store_settings::StoreSettingsRepository;
 pub use ticket::TicketRepository;
+pub use ticket_note::TicketNoteRepository;
 pub use ticket_photo::TicketPhotoRepository;
