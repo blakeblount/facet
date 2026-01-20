@@ -1584,3 +1584,51 @@ Key finding: DOM updated 9.5ms BEFORE server response
 - The implementation properly handles the cancel case by not applying any optimistic update
 - No API call is made when PIN verification is cancelled
 - Employee attribution requirement is enforced - status changes cannot occur without PIN verification
+
+---
+
+## TEST: facet-bp2 - Search by Customer Name
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/search
+2. Verified search page loaded with search input, status filter, and date pickers
+3. First searched for "a" to find all tickets - found 2 tickets (John Smith, E2E Test Customer)
+4. Searched for full customer name "John Smith"
+5. Verified results showed "Found 1 ticket matching 'John Smith'" with JR-0001 ticket
+6. Searched for partial first name "John"
+7. Verified results showed "Found 1 ticket matching 'John'" with same JR-0001 ticket
+8. Searched for partial last name "Smith"
+9. Verified results showed "Found 1 ticket matching 'Smith'" with JR-0001 ticket
+10. Searched for lowercase "john smith" (all lowercase)
+11. Verified results showed "Found 1 ticket matching 'john smith'" with JR-0001 ticket
+12. Searched for uppercase "JOHN"
+13. Verified results showed "Found 1 ticket matching 'JOHN'" with JR-0001 ticket
+14. Searched for "E2E Test Customer" (second customer)
+15. Verified results showed "Found 1 ticket matching 'E2E Test Customer'" with JR-0003 ticket
+
+### Success Criteria Results
+- [x] Search by customer name returns matching tickets - PASS - "John Smith" returned JR-0001, "E2E Test Customer" returned JR-0003
+- [x] All tickets for that customer are shown - PASS - Each customer has one ticket and it was returned correctly
+- [x] Partial name matches work (e.g., "John" matches "John Smith") - PASS - "John" matched "John Smith", "Smith" also matched "John Smith"
+- [x] Results display customer name, ticket info - PASS - Each result card shows:
+  - Ticket code (JR-0001, JR-0003)
+  - Status badge (closed, ready for pickup)
+  - Customer name (John Smith, E2E Test Customer)
+  - Item description (Gold wedding band, 14k gold engagement ring with 1 carat diamond)
+- [x] Case insensitive search works - PASS - "john smith" (lowercase), "JOHN" (uppercase), and "John Smith" (mixed case) all returned the same ticket
+
+### Screenshots
+- .playwright-mcp/ui-test-search-customer-name.png - Search results showing "E2E Test Customer" match
+
+### Issues Found
+- None - Customer name search functionality works correctly
+
+### Notes
+- The search is truly case-insensitive, matching regardless of case used in the query
+- Partial name matching works for both first name and last name portions
+- Search results display all relevant ticket information: code, status badge, customer name, and item description
+- The search appears to be using full-text search across multiple fields including customer name
+- URL correctly updates with search query: `/search?q=john+smith&status=&from_date=&to_date=`
