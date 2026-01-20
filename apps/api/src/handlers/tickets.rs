@@ -14,8 +14,8 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::models::{
-    CreateCustomer, CreateFieldHistory, CreateStatusHistory, CreateTicket, QueueTicket, Ticket,
-    TicketFilters, TicketSearchParams, TicketStatus, UpdateTicket,
+    CreateCustomer, CreateFieldHistory, CreateStatusHistory, CreateTicket, Customer, QueueTicket,
+    Ticket, TicketFilters, TicketSearchParams, TicketStatus, UpdateTicket,
 };
 use crate::repositories::{
     CustomerRepository, EmployeeRepository, FieldHistoryRepository, StatusHistoryRepository,
@@ -88,6 +88,333 @@ pub struct PaginationInfo {
     pub offset: i64,
     /// Whether there may be more results
     pub has_more: bool,
+}
+
+// =============================================================================
+// GET /tickets/:ticket_id - Ticket Detail
+// =============================================================================
+
+/// Employee attribution summary for display.
+#[derive(Debug, Clone, Serialize)]
+pub struct EmployeeAttribution {
+    pub employee_id: Uuid,
+    pub name: String,
+}
+
+/// Customer info in ticket detail response.
+#[derive(Debug, Clone, Serialize)]
+pub struct TicketCustomer {
+    pub customer_id: Uuid,
+    pub name: String,
+    pub phone: Option<String>,
+    pub email: Option<String>,
+}
+
+impl From<Customer> for TicketCustomer {
+    fn from(c: Customer) -> Self {
+        Self {
+            customer_id: c.customer_id,
+            name: c.name,
+            phone: c.phone,
+            email: c.email,
+        }
+    }
+}
+
+/// Storage location info in ticket detail response.
+#[derive(Debug, Clone, Serialize)]
+pub struct TicketStorageLocation {
+    pub location_id: Uuid,
+    pub name: String,
+}
+
+/// Photo record from the database.
+#[derive(Debug, Clone, sqlx::FromRow)]
+#[allow(dead_code)] // storage_key reserved for future signed URL generation
+struct PhotoRecord {
+    photo_id: Uuid,
+    storage_key: String,
+    uploaded_at: DateTime<Utc>,
+    uploaded_by: Uuid,
+    employee_name: String,
+}
+
+/// Photo info in ticket detail response.
+#[derive(Debug, Clone, Serialize)]
+pub struct TicketPhoto {
+    pub photo_id: Uuid,
+    /// Signed URL for accessing the photo (placeholder until storage is integrated in AppState)
+    pub url: String,
+    pub uploaded_at: DateTime<Utc>,
+    pub uploaded_by: EmployeeAttribution,
+}
+
+/// Note record from the database.
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct NoteRecord {
+    note_id: Uuid,
+    content: String,
+    created_at: DateTime<Utc>,
+    created_by: Uuid,
+    employee_name: String,
+}
+
+/// Note info in ticket detail response.
+#[derive(Debug, Clone, Serialize)]
+pub struct TicketNote {
+    pub note_id: Uuid,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+    pub created_by: EmployeeAttribution,
+}
+
+/// Status history record from the database.
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct StatusHistoryRecord {
+    from_status: Option<TicketStatus>,
+    to_status: TicketStatus,
+    changed_at: DateTime<Utc>,
+    changed_by: Uuid,
+    employee_name: String,
+}
+
+/// Status history entry in ticket detail response.
+#[derive(Debug, Clone, Serialize)]
+pub struct TicketStatusHistoryEntry {
+    pub from_status: Option<TicketStatus>,
+    pub to_status: TicketStatus,
+    pub changed_at: DateTime<Utc>,
+    pub changed_by: EmployeeAttribution,
+}
+
+/// Full ticket detail response.
+#[derive(Debug, Clone, Serialize)]
+pub struct TicketDetailResponse {
+    pub ticket_id: Uuid,
+    pub friendly_code: String,
+    pub status: TicketStatus,
+    pub is_rush: bool,
+
+    pub customer: TicketCustomer,
+
+    pub item_type: Option<String>,
+    pub item_description: String,
+    pub condition_notes: String,
+    pub requested_work: String,
+
+    pub promise_date: Option<NaiveDate>,
+    pub storage_location: TicketStorageLocation,
+
+    pub quote_amount: Option<Decimal>,
+    pub actual_amount: Option<Decimal>,
+
+    pub photos: Vec<TicketPhoto>,
+    pub notes: Vec<TicketNote>,
+    pub status_history: Vec<TicketStatusHistoryEntry>,
+
+    pub taken_in_by: EmployeeAttribution,
+    pub worked_by: Option<EmployeeAttribution>,
+    pub closed_by: Option<EmployeeAttribution>,
+
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub closed_at: Option<DateTime<Utc>>,
+}
+
+/// Storage location record from the database.
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct StorageLocationRecord {
+    location_id: Uuid,
+    name: String,
+}
+
+/// GET /api/v1/tickets/:ticket_id - Get full ticket details.
+pub async fn get_ticket(
+    State(state): State<AppState>,
+    Path(ticket_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    // 1. Find the ticket
+    let ticket = TicketRepository::find_by_id(&state.db, ticket_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Ticket not found"))?;
+
+    // 2. Find the customer
+    let customer = CustomerRepository::find_by_id(&state.db, ticket.customer_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Customer not found"))?;
+
+    // 3. Get storage location
+    let storage_location = sqlx::query_as::<_, StorageLocationRecord>(
+        "SELECT location_id, name FROM storage_locations WHERE location_id = $1",
+    )
+    .bind(ticket.storage_location_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::not_found("Storage location not found"))?;
+
+    // 4. Get employee who took in the ticket
+    let taken_in_by = EmployeeRepository::find_by_id(&state.db, ticket.taken_in_by)
+        .await?
+        .ok_or_else(|| AppError::server_error("Taken in by employee not found"))?;
+
+    // 5. Get worked_by employee if set
+    let worked_by = if let Some(worked_by_id) = ticket.worked_by {
+        EmployeeRepository::find_by_id(&state.db, worked_by_id)
+            .await?
+            .map(|e| EmployeeAttribution {
+                employee_id: e.employee_id,
+                name: e.name,
+            })
+    } else {
+        None
+    };
+
+    // 6. Get closed_by employee if set
+    let closed_by = if let Some(closed_by_id) = ticket.closed_by {
+        EmployeeRepository::find_by_id(&state.db, closed_by_id)
+            .await?
+            .map(|e| EmployeeAttribution {
+                employee_id: e.employee_id,
+                name: e.name,
+            })
+    } else {
+        None
+    };
+
+    // 7. Get photos with employee names
+    let photo_records = sqlx::query_as::<_, PhotoRecord>(
+        r#"
+        SELECT
+            p.photo_id,
+            p.storage_key,
+            p.uploaded_at,
+            p.uploaded_by,
+            e.name as employee_name
+        FROM ticket_photos p
+        JOIN employees e ON p.uploaded_by = e.employee_id
+        WHERE p.ticket_id = $1
+        ORDER BY p.uploaded_at ASC
+        "#,
+    )
+    .bind(ticket_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    // Convert to response format
+    // Note: For now, we use the storage_key as a placeholder URL.
+    // When StorageClient is integrated into AppState, this should generate signed URLs.
+    let photos: Vec<TicketPhoto> = photo_records
+        .into_iter()
+        .map(|p| TicketPhoto {
+            photo_id: p.photo_id,
+            // TODO: Generate signed URL when storage client is in AppState
+            // For now, return a placeholder API path
+            url: format!("/api/v1/tickets/{}/photos/{}", ticket_id, p.photo_id),
+            uploaded_at: p.uploaded_at,
+            uploaded_by: EmployeeAttribution {
+                employee_id: p.uploaded_by,
+                name: p.employee_name,
+            },
+        })
+        .collect();
+
+    // 8. Get notes with employee names
+    let note_records = sqlx::query_as::<_, NoteRecord>(
+        r#"
+        SELECT
+            n.note_id,
+            n.content,
+            n.created_at,
+            n.created_by,
+            e.name as employee_name
+        FROM ticket_notes n
+        JOIN employees e ON n.created_by = e.employee_id
+        WHERE n.ticket_id = $1
+        ORDER BY n.created_at ASC
+        "#,
+    )
+    .bind(ticket_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    let notes: Vec<TicketNote> = note_records
+        .into_iter()
+        .map(|n| TicketNote {
+            note_id: n.note_id,
+            content: n.content,
+            created_at: n.created_at,
+            created_by: EmployeeAttribution {
+                employee_id: n.created_by,
+                name: n.employee_name,
+            },
+        })
+        .collect();
+
+    // 9. Get status history with employee names
+    let status_history_records = sqlx::query_as::<_, StatusHistoryRecord>(
+        r#"
+        SELECT
+            h.from_status,
+            h.to_status,
+            h.changed_at,
+            h.changed_by,
+            e.name as employee_name
+        FROM ticket_status_history h
+        JOIN employees e ON h.changed_by = e.employee_id
+        WHERE h.ticket_id = $1
+        ORDER BY h.changed_at ASC
+        "#,
+    )
+    .bind(ticket_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    let status_history: Vec<TicketStatusHistoryEntry> = status_history_records
+        .into_iter()
+        .map(|h| TicketStatusHistoryEntry {
+            from_status: h.from_status,
+            to_status: h.to_status,
+            changed_at: h.changed_at,
+            changed_by: EmployeeAttribution {
+                employee_id: h.changed_by,
+                name: h.employee_name,
+            },
+        })
+        .collect();
+
+    // 10. Build the response
+    let response = TicketDetailResponse {
+        ticket_id: ticket.ticket_id,
+        friendly_code: ticket.friendly_code,
+        status: ticket.status,
+        is_rush: ticket.is_rush,
+        customer: customer.into(),
+        item_type: ticket.item_type,
+        item_description: ticket.item_description,
+        condition_notes: ticket.condition_notes,
+        requested_work: ticket.requested_work,
+        promise_date: ticket.promise_date,
+        storage_location: TicketStorageLocation {
+            location_id: storage_location.location_id,
+            name: storage_location.name,
+        },
+        quote_amount: ticket.quote_amount,
+        actual_amount: ticket.actual_amount,
+        photos,
+        notes,
+        status_history,
+        taken_in_by: EmployeeAttribution {
+            employee_id: taken_in_by.employee_id,
+            name: taken_in_by.name,
+        },
+        worked_by,
+        closed_by,
+        created_at: ticket.created_at,
+        updated_at: ticket.updated_at,
+        closed_at: ticket.closed_at,
+    };
+
+    Ok(Json(ApiResponse::success(response)))
 }
 
 /// GET /api/v1/tickets - List tickets with filters.
@@ -886,5 +1213,127 @@ mod tests {
         assert!(json.contains("\"limit\":50"));
         assert!(json.contains("\"offset\":0"));
         assert!(json.contains("\"has_more\":false"));
+    }
+
+    #[test]
+    fn test_employee_attribution_serialization() {
+        let attribution = EmployeeAttribution {
+            employee_id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
+            name: "Alice".to_string(),
+        };
+        let json = serde_json::to_string(&attribution).unwrap();
+        assert!(json.contains("\"employee_id\":\"550e8400-e29b-41d4-a716-446655440000\""));
+        assert!(json.contains("\"name\":\"Alice\""));
+    }
+
+    #[test]
+    fn test_ticket_customer_serialization() {
+        let customer = TicketCustomer {
+            customer_id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
+            name: "Jane Doe".to_string(),
+            phone: Some("555-1234".to_string()),
+            email: None,
+        };
+        let json = serde_json::to_string(&customer).unwrap();
+        assert!(json.contains("\"customer_id\":\"550e8400-e29b-41d4-a716-446655440000\""));
+        assert!(json.contains("\"name\":\"Jane Doe\""));
+        assert!(json.contains("\"phone\":\"555-1234\""));
+        assert!(json.contains("\"email\":null"));
+    }
+
+    #[test]
+    fn test_ticket_customer_from_customer() {
+        let customer = Customer {
+            customer_id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
+            name: "Jane Doe".to_string(),
+            phone: Some("555-1234".to_string()),
+            email: Some("jane@example.com".to_string()),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let ticket_customer: TicketCustomer = customer.into();
+        assert_eq!(ticket_customer.name, "Jane Doe");
+        assert_eq!(ticket_customer.phone, Some("555-1234".to_string()));
+        assert_eq!(ticket_customer.email, Some("jane@example.com".to_string()));
+    }
+
+    #[test]
+    fn test_ticket_storage_location_serialization() {
+        let location = TicketStorageLocation {
+            location_id: Uuid::parse_str("660e8400-e29b-41d4-a716-446655440000").unwrap(),
+            name: "Safe Drawer 1".to_string(),
+        };
+        let json = serde_json::to_string(&location).unwrap();
+        assert!(json.contains("\"location_id\":\"660e8400-e29b-41d4-a716-446655440000\""));
+        assert!(json.contains("\"name\":\"Safe Drawer 1\""));
+    }
+
+    #[test]
+    fn test_ticket_note_serialization() {
+        let note = TicketNote {
+            note_id: Uuid::parse_str("770e8400-e29b-41d4-a716-446655440000").unwrap(),
+            content: "Customer mentioned ring has sentimental value".to_string(),
+            created_at: Utc::now(),
+            created_by: EmployeeAttribution {
+                employee_id: Uuid::parse_str("880e8400-e29b-41d4-a716-446655440000").unwrap(),
+                name: "Alice".to_string(),
+            },
+        };
+        let json = serde_json::to_string(&note).unwrap();
+        assert!(json.contains("\"note_id\":\"770e8400-e29b-41d4-a716-446655440000\""));
+        assert!(json.contains("\"content\":\"Customer mentioned ring has sentimental value\""));
+        assert!(json.contains("\"created_by\""));
+    }
+
+    #[test]
+    fn test_ticket_status_history_entry_serialization() {
+        let entry = TicketStatusHistoryEntry {
+            from_status: Some(TicketStatus::Intake),
+            to_status: TicketStatus::InProgress,
+            changed_at: Utc::now(),
+            changed_by: EmployeeAttribution {
+                employee_id: Uuid::parse_str("880e8400-e29b-41d4-a716-446655440000").unwrap(),
+                name: "Bob".to_string(),
+            },
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("\"from_status\":\"intake\""));
+        assert!(json.contains("\"to_status\":\"in_progress\""));
+        assert!(json.contains("\"changed_by\""));
+    }
+
+    #[test]
+    fn test_ticket_status_history_entry_null_from_status() {
+        let entry = TicketStatusHistoryEntry {
+            from_status: None,
+            to_status: TicketStatus::Intake,
+            changed_at: Utc::now(),
+            changed_by: EmployeeAttribution {
+                employee_id: Uuid::parse_str("880e8400-e29b-41d4-a716-446655440000").unwrap(),
+                name: "Alice".to_string(),
+            },
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("\"from_status\":null"));
+        assert!(json.contains("\"to_status\":\"intake\""));
+    }
+
+    #[test]
+    fn test_ticket_photo_serialization() {
+        let photo = TicketPhoto {
+            photo_id: Uuid::parse_str("990e8400-e29b-41d4-a716-446655440000").unwrap(),
+            url: "/api/v1/tickets/abc/photos/990e8400-e29b-41d4-a716-446655440000".to_string(),
+            uploaded_at: Utc::now(),
+            uploaded_by: EmployeeAttribution {
+                employee_id: Uuid::parse_str("880e8400-e29b-41d4-a716-446655440000").unwrap(),
+                name: "Alice".to_string(),
+            },
+        };
+        let json = serde_json::to_string(&photo).unwrap();
+        assert!(json.contains("\"photo_id\":\"990e8400-e29b-41d4-a716-446655440000\""));
+        assert!(json.contains(
+            "\"url\":\"/api/v1/tickets/abc/photos/990e8400-e29b-41d4-a716-446655440000\""
+        ));
+        assert!(json.contains("\"uploaded_by\""));
     }
 }

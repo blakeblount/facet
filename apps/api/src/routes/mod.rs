@@ -12,10 +12,7 @@
 
 mod health;
 
-use axum::{
-    routing::{get, put},
-    Router,
-};
+use axum::{routing::get, Router};
 use sqlx::postgres::PgPool;
 
 use crate::handlers;
@@ -49,7 +46,10 @@ pub fn api_router(state: AppState) -> Router {
             "/",
             get(handlers::list_tickets).post(handlers::create_ticket),
         )
-        .route("/{ticket_id}", put(handlers::update_ticket))
+        .route(
+            "/{ticket_id}",
+            get(handlers::get_ticket).put(handlers::update_ticket),
+        )
         .route("/{ticket_id}/receipt.pdf", get(handlers::get_receipt_pdf));
 
     // API v1 routes
