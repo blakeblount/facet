@@ -2352,3 +2352,51 @@ Both `IntakeFormModal` and `TicketDetailModal` use the base `Modal.svelte` compo
 - TicketDetailModal is accessed through the Search page results
 
 ---
+
+## TEST: facet-dqo - Theme Toggle - Imperial
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/admin
+2. Observed the Appearance section with two theme buttons: Imperial and Arcane
+3. Verified initial state was Imperial theme (already active from previous session)
+4. Clicked Arcane button to switch themes (for testing purposes)
+5. Clicked Imperial button - observed immediate visual change
+6. Verified data-theme attribute on html element changed to "imperial"
+7. Verified localStorage was updated with "facet-theme": "imperial"
+8. Refreshed the page - confirmed theme persisted after refresh
+9. Navigated to Workboard page - confirmed theme still applied
+10. Navigated back to Admin page - confirmed Imperial button still shows active state
+
+### Success Criteria Results
+- [x] Imperial theme button is clickable - PASS
+- [x] Clicking applies Imperial theme immediately - PASS (data-theme attribute updates instantly)
+- [x] Button shows active/selected state (blue border, background tint) - PASS (visible in screenshots)
+- [x] Theme persists after page refresh (check localStorage) - PASS (localStorage contains "facet-theme": "imperial")
+- [x] Theme applies to all pages (navigate away and back) - PASS (tested on Workboard and Admin pages)
+- [x] Color scheme matches Imperial theme definition - PASS (clean, sophisticated aesthetic with navy header)
+
+### Screenshots
+- .playwright-mcp/test-imperial-theme-active.png - Admin page with Imperial theme selected
+- .playwright-mcp/test-imperial-theme-workboard.png - Workboard page with Imperial theme applied
+- .playwright-mcp/test-imperial-theme-persisted.png - Admin page after navigation showing persistent active state
+
+### Technical Details
+Theme implementation in `apps/web/src/lib/stores/theme.svelte.ts`:
+- Theme stored in localStorage with key "facet-theme"
+- Applied via `data-theme` attribute on document.documentElement
+- Two themes available: "imperial" and "arcane"
+- Default theme is "imperial"
+- Theme initialization happens in `+layout.svelte` on app load
+
+### Issues Found
+- None
+
+### Notes
+- The accessibility snapshot from Playwright doesn't always show the `[active]` state immediately after page load, but JavaScript evaluation confirms the `.active` class is present
+- Theme switching is instant with no visible delay
+- The Imperial theme provides a clean, professional jewelry store aesthetic with navy blue header and elegant Playfair Display typography
+
+---
