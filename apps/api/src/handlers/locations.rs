@@ -9,10 +9,13 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::error::AppError;
-use crate::models::storage_location::{CreateStorageLocation, StorageLocationSummary};
+use crate::models::storage_location::{
+    CreateStorageLocation, StorageLocationSummary, UpdateStorageLocation,
+};
 use crate::repositories::{StorageLocationRepository, StoreSettingsRepository};
 use crate::response::{created, ApiResponse};
 use crate::routes::AppState;
+use uuid::Uuid;
 
 // =============================================================================
 // Admin PIN Verification Helper
@@ -129,6 +132,69 @@ pub async fn create_location(
     };
 
     Ok(created(summary))
+}
+
+// =============================================================================
+// PUT /locations/:location_id (admin) - Update Storage Location
+// =============================================================================
+
+/// PUT /api/v1/locations/:location_id - Update a storage location (admin only).
+///
+/// Requires X-Admin-PIN header for authorization.
+/// Updates the location with the provided fields.
+/// Name must be unique (case-insensitive) if changed.
+///
+/// Returns the updated location.
+pub async fn update_location(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Path(location_id): axum::extract::Path<Uuid>,
+    Json(body): Json<UpdateStorageLocation>,
+) -> Result<impl IntoResponse, AppError> {
+    // Verify admin PIN
+    verify_admin_pin_header(&state, &headers).await?;
+
+    // Find the existing location
+    let existing = StorageLocationRepository::find_by_id(&state.db, location_id).await?;
+    let existing = existing.ok_or_else(|| AppError::not_found("Location not found"))?;
+
+    // If name is being changed, check for duplicates
+    if let Some(ref new_name) = body.name {
+        let trimmed_name = new_name.trim();
+        if trimmed_name.is_empty() {
+            return Err(AppError::validation("Name cannot be empty"));
+        }
+
+        // Check if another location has this name (case-insensitive)
+        let duplicate = StorageLocationRepository::find_by_name(&state.db, trimmed_name).await?;
+        if let Some(dup) = duplicate {
+            if dup.location_id != existing.location_id {
+                return Err(AppError::validation(
+                    "A location with this name already exists",
+                ));
+            }
+        }
+    }
+
+    // Build the update input with trimmed name if provided
+    let update_input = UpdateStorageLocation {
+        name: body.name.map(|n| n.trim().to_string()),
+        is_active: body.is_active,
+    };
+
+    // Update the location
+    let location = StorageLocationRepository::update(&state.db, location_id, update_input)
+        .await?
+        .ok_or_else(|| AppError::not_found("Location not found"))?;
+
+    // Return as StorageLocationSummary
+    let summary = StorageLocationSummary {
+        location_id: location.location_id,
+        name: location.name,
+        is_active: location.is_active,
+    };
+
+    Ok(Json(ApiResponse::success(summary)))
 }
 
 #[cfg(test)]
@@ -270,5 +336,39 @@ mod tests {
 
         let json = serde_json::to_string(&summary).unwrap();
         assert!(json.contains("\"is_active\":false"));
+    }
+
+    // Tests for UpdateStorageLocation deserialization
+
+    #[test]
+    fn test_update_storage_location_deserialize_name_only() {
+        let json = r#"{"name": "New Name"}"#;
+        let input: UpdateStorageLocation = serde_json::from_str(json).unwrap();
+        assert_eq!(input.name, Some("New Name".to_string()));
+        assert!(input.is_active.is_none());
+    }
+
+    #[test]
+    fn test_update_storage_location_deserialize_is_active_only() {
+        let json = r#"{"is_active": false}"#;
+        let input: UpdateStorageLocation = serde_json::from_str(json).unwrap();
+        assert!(input.name.is_none());
+        assert_eq!(input.is_active, Some(false));
+    }
+
+    #[test]
+    fn test_update_storage_location_deserialize_full() {
+        let json = r#"{"name": "Updated Name", "is_active": true}"#;
+        let input: UpdateStorageLocation = serde_json::from_str(json).unwrap();
+        assert_eq!(input.name, Some("Updated Name".to_string()));
+        assert_eq!(input.is_active, Some(true));
+    }
+
+    #[test]
+    fn test_update_storage_location_deserialize_empty() {
+        let json = r#"{}"#;
+        let input: UpdateStorageLocation = serde_json::from_str(json).unwrap();
+        assert!(input.name.is_none());
+        assert!(input.is_active.is_none());
     }
 }
