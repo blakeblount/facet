@@ -2,27 +2,44 @@
 
 ## Project Overview
 
-<!-- Brief description of the project -->
+Facet is a jewelry repair intake and ticketing web app. Desktop-first, photo-required intake, FIFO queue with Rush override, employee attribution for accountability. See `VISION.md` for feature scope and `docs/PRD.md` for detailed requirements.
 
 ## Tech Stack
 
-<!-- Languages, frameworks, key dependencies -->
+- **Frontend:** SvelteKit (TypeScript)
+- **Backend:** Rust + Axum
+- **Database:** Postgres
+- **Storage:** S3-compatible (DigitalOcean Spaces)
+- **Dev:** Docker Compose
+- **Migrations:** sqlx
 
--
+## Repo Structure
+
+```
+apps/
+  web/              # SvelteKit frontend
+  api/              # Rust Axum backend
+packages/
+  shared/           # Shared types, schemas, utilities
+infra/
+  docker/           # Docker compose, nginx, local configs
+docs/
+  PRD.md            # Detailed product requirements
+```
 
 ## Quality Gates
 
 Run these before every commit:
 
 ```bash
-# Example for Rust:
-# cargo fmt && cargo clippy && cargo test
+# Frontend (apps/web)
+cd apps/web && npm run lint && npm run check && npm test
 
-# Example for Node:
-# npm run lint && npm run test
+# Backend (apps/api)
+cd apps/api && cargo fmt --check && cargo clippy && cargo test
 
-# Update with your project's commands:
-
+# Full check
+docker compose up -d db && cargo test && npm test
 ```
 
 ## Issue Tracking
@@ -30,24 +47,35 @@ Run these before every commit:
 This project uses beads for issue tracking.
 
 ```bash
-bd ready                          # Find available work
-bd show <id>                      # View issue details
-bd update <id> --status in_progress  # Claim work
-bd close <id>                     # Complete work
-bd create "description"           # Create new issue
+bd ready                              # Find available work
+bd show <id>                          # View issue details
+bd update <id> --status in_progress   # Claim work
+bd close <id>                         # Complete work
+bd create --title="..." --type=task   # Create new issue
 ```
 
 ## Code Conventions
 
-<!-- Project-specific patterns, naming, structure -->
+- Use TypeScript strict mode in frontend
+- Rust: follow clippy lints, use `?` for error propagation
+- API responses: consistent JSON structure with `data`, `error` fields
+- Database: snake_case for columns, use UUIDs for primary keys
+- Tickets use `friendly_code` (e.g., JR-9F3K2) for human display
 
--
+## Key Domain Concepts
+
+- **Ticket:** A repair job with customer info, item details, photos, status
+- **Status flow:** Intake → In Progress → Waiting on Parts → Ready for Pickup → Closed
+- **Queue order:** Rush tickets first, then FIFO by created_at
+- **Employee attribution:** Every key action records who did it (via Employee ID/PIN)
 
 ## Important Files
 
-<!-- Key files an agent should know about -->
-
--
+- `VISION.md` - Project vision and feature scope
+- `docs/PRD.md` - Full product requirements
+- `apps/api/src/main.rs` - API entry point
+- `apps/web/src/routes/` - SvelteKit routes
+- `docker-compose.yml` - Local dev services
 
 ## Landing the Plane (Session Completion)
 

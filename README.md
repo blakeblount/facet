@@ -72,8 +72,10 @@ Suggested structure (adjust as needed):
   infra/
     docker/             # docker compose, nginx, local configs
   docs/
-    PRD.md              # product requirements (source of truth)
-    README.md           # this file
+    PRD.md              # detailed product requirements
+  VISION.md             # project vision and feature scope
+  AGENTS.md             # agent instructions for coding assistants
+  README.md             # this file (dev setup)
 ```
 
 ---
