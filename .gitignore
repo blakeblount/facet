@@ -28,3 +28,17 @@ ralph-log-*.txt
 
 # Test coverage
 coverage/
+
+# Playwright MCP
+.playwright-mcp/
+
+# Uploads (user content)
+apps/api/uploads/
+
+# Dev build output
+**/dev-dist/
+
+# Temp/scratch files
+PROMPT.md
+RAILS.md
+test-ring.png
