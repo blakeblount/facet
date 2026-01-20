@@ -46,35 +46,37 @@ Clean, sophisticated American luxury aesthetic. Think high-end jewelry store dis
 
 ---
 
-### Theme B: "Retro" (Alternative)
+### Theme B: "Arcane" (Alternative)
 
-Playful, warm, vintage-inspired. Think 1970s jewelry shop meets modern usability.
+Fantasy-inspired pixel art aesthetic with steampunk undertones. Think classic RPG inventory screens and brass clockwork mechanisms - crisp, nostalgic, and atmospheric.
 
 **Color Palette:**
 | Role | Color | Hex |
 |------|-------|-----|
-| Background | Warm cream | `#F5E6D3` |
-| Surface | Off-white | `#FDF8F3` |
-| Primary | Burnt orange | `#C85A2E` |
-| Primary hover | Darker orange | `#A04725` |
-| Accent | Teal | `#2A7B7B` |
-| Text primary | Dark brown | `#3D2E1E` |
-| Text secondary | Warm brown | `#7A6552` |
-| Success | Olive green | `#5B7A3D` |
-| Warning | Mustard | `#D4A017` |
-| Error/Overdue | Terracotta | `#B84A3C` |
-| Rush badge | Teal | `#2A7B7B` |
+| Background | Aged parchment | `#2D2A24` |
+| Surface | Dark leather | `#3D3830` |
+| Primary | Polished brass | `#B8860B` |
+| Primary hover | Burnished brass | `#9A7209` |
+| Accent | Arcane teal | `#4A9B9B` |
+| Text primary | Parchment white | `#E8DCC4` |
+| Text secondary | Faded ink | `#A89880` |
+| Success | Emerald gem | `#2E8B57` |
+| Warning | Amber glow | `#DAA520` |
+| Error/Overdue | Dragon's blood | `#8B0000` |
+| Rush badge | Magical cyan | `#00CED1` |
 
 **Typography:**
-- Headings: Retro-inspired (e.g., Fraunces, Recoleta)
-- Body: Rounded sans-serif (e.g., Nunito, Quicksand)
-- Monospace: IBM Plex Mono
+- Headings: Pixel font (e.g., Press Start 2P, VT323)
+- Body: Readable pixel/retro font (e.g., Silkscreen, Pixelify Sans)
+- Monospace: Same pixel aesthetic (e.g., VT323)
 
 **Visual Elements:**
-- Slightly heavier shadows
-- More rounded corners (8-12px)
-- Warmer, cozier feel
-- Can incorporate subtle patterns or textures
+- Pixel-perfect borders (1-2px solid, no anti-aliasing blur)
+- Sharp corners or minimal rounding (0-2px)
+- Subtle inner shadows for depth (inset panel feel)
+- Copper/brass accent borders on focus states
+- Optional: subtle gear or rune patterns as background textures
+- 8-bit inspired iconography where appropriate
 
 ---
 
@@ -355,7 +357,7 @@ Accessed via settings gear in header. Requires admin PIN.
 - **Store Info:** Name, contact, ticket prefix
 - **Employees:** List, add, edit, deactivate employees
 - **Locations:** Manage storage locations
-- **Appearance:** Theme switcher (Imperial / Retro)
+- **Appearance:** Theme switcher (Imperial / Arcane)
 
 ---
 
