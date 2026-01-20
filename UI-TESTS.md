@@ -2737,3 +2737,84 @@ a02a8960-c23f-495b-9962-c75545e40c5c | Admin | admin | t
 - Once admin authentication is implemented, the employee list should display correctly
 - Test passes for "UI components exist" but blocks on "data displays correctly"
 - Fallback message "No employees configured yet." may be misleading when employees exist but auth fails
+
+---
+
+## TEST: facet-32y - Storage locations list displays correctly
+**Date:** 2026-01-20
+**Status:** FAIL (API Response Parsing Bug)
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/admin
+2. Located the Storage Locations section on the admin page
+3. Verified section header "Storage Locations" is present (h2 level heading)
+4. Observed "No storage locations configured yet." message displayed
+5. Investigated API behavior: `/api/v1/locations` returns 200 with 5 locations
+6. Verified database has 5 storage locations (Display Case, Safe Drawer 1, Safe Drawer 2, Workbench A, Workbench B)
+7. Identified bug: API returns `{data: {locations: [...], count: 5}}` but frontend expects `{data: [...]}`
+
+### Success Criteria Results
+- [x] Storage Locations section is present with header - PASS - Section with h2 "Storage Locations" heading present
+- [ ] All locations from database are listed - FAIL - Frontend cannot parse API response correctly
+- [ ] Each entry shows location name - FAIL - No entries displayed due to parsing bug
+- [ ] Inactive locations show "Inactive" badge (if any) - N/A - No inactive locations in database
+- [x] List is readable and properly formatted - PASS - UI structure correct, just no data
+
+### Technical Details
+Frontend implementation (`apps/web/src/routes/admin/+page.svelte`):
+- Storage locations list section present with proper markup
+- Template ready to display locations with: name, inactive badge
+- CSS styling exists for location items
+- Inactive badge styling: `.location-inactive` (red background)
+
+Page loader (`apps/web/src/routes/admin/+page.server.ts`):
+- Fetches `/api/v1/locations` (no authentication required)
+- Line 36-40: `if (json.data) { locations = json.data; }`
+- Bug: Sets `locations = {locations: [...], count: 5}` (object) instead of array
+- Template checks `data.locations.length > 0` which fails on object
+
+API response format (`/api/v1/locations`):
+```json
+{
+  "data": {
+    "locations": [
+      {"location_id": "cd47cb19-...", "name": "Display Case", "is_active": true},
+      {"location_id": "a37f9e70-...", "name": "Safe Drawer 1", "is_active": true},
+      {"location_id": "dc00a451-...", "name": "Safe Drawer 2", "is_active": true},
+      {"location_id": "bf3b2f0a-...", "name": "Workbench A", "is_active": true},
+      {"location_id": "b3f67d3f-...", "name": "Workbench B", "is_active": true}
+    ],
+    "count": 5
+  },
+  "error": null
+}
+```
+
+Database state:
+```
+             location_id              |     name      | is_active 
+--------------------------------------+---------------+-----------
+ cd47cb19-8014-4082-a968-9a3f41a95efa | Display Case  | t
+ a37f9e70-928c-4131-9eb2-6acdd6aad539 | Safe Drawer 1 | t
+ dc00a451-44d4-4bb6-b094-057b080691db | Safe Drawer 2 | t
+ bf3b2f0a-4814-421a-8b81-9b9a10075cd5 | Workbench A   | t
+ b3f67d3f-91fc-4557-b056-fbbe09ffc1e5 | Workbench B   | t
+```
+
+### Screenshots
+- storage-locations-test.png - Shows admin page with empty storage locations section
+
+### Issues Found
+- **HIGH**: Storage locations not displaying due to API response format mismatch
+  - API returns: `{data: {locations: [...], count: N}}`
+  - Frontend expects: `{data: [...]}`
+  - Fix needed in `+page.server.ts` line 38: change `locations = json.data;` to `locations = json.data.locations || [];`
+  - User sees "No storage locations configured yet." even when 5 locations exist
+
+### Notes
+- API endpoint works correctly and requires no authentication (unlike employees)
+- All 5 storage locations are active, so inactive badge behavior cannot be tested
+- UI components (template, styling) are fully implemented and correct
+- Only the response parsing in the page loader needs to be fixed
+- Similar pattern to employees API which also uses nested data structure
