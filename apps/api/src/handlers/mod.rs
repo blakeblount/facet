@@ -5,4 +5,4 @@
 
 pub mod tickets;
 
-pub use tickets::{create_ticket, get_receipt_pdf};
+pub use tickets::{create_ticket, get_receipt_pdf, update_ticket};

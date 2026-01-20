@@ -13,9 +13,13 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::models::{CreateCustomer, CreateStatusHistory, CreateTicket, Ticket, TicketStatus};
+use crate::models::{
+    CreateCustomer, CreateFieldHistory, CreateStatusHistory, CreateTicket, Ticket, TicketStatus,
+    UpdateTicket,
+};
 use crate::repositories::{
-    CustomerRepository, EmployeeRepository, StatusHistoryRepository, TicketRepository,
+    CustomerRepository, EmployeeRepository, FieldHistoryRepository, StatusHistoryRepository,
+    TicketRepository,
 };
 use crate::response::ApiResponse;
 use crate::routes::AppState;
@@ -258,6 +262,242 @@ pub async fn get_receipt_pdf(
     Ok(response)
 }
 
+/// Helper to deserialize Option<Option<T>> where explicit null means Some(None).
+///
+/// This is used for fields that can be:
+/// - Absent: The field is not in the JSON (outer Option is None)
+/// - Null: The field is explicitly set to null (outer Option is Some(None))
+/// - Present: The field has a value (outer Option is Some(Some(value)))
+fn deserialize_optional_nullable<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: serde::Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    // This gets called only when the field is present in JSON
+    // If it's null, we get Some(None); if it's a value, we get Some(Some(value))
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
+/// Request body for updating a ticket.
+///
+/// All fields are optional - only provided fields will be updated.
+/// For nullable fields (promise_date, quote_amount, actual_amount, worked_by_employee_id),
+/// the outer Option indicates if the field was provided, and the inner Option indicates
+/// if it should be set to null.
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateTicketRequest {
+    /// Item type (e.g., "ring", "necklace")
+    pub item_type: Option<String>,
+
+    /// Description of the item
+    pub item_description: Option<String>,
+
+    /// Notes about the item's condition
+    pub condition_notes: Option<String>,
+
+    /// Description of requested work
+    pub requested_work: Option<String>,
+
+    /// Whether this is a rush job
+    pub is_rush: Option<bool>,
+
+    /// Promised completion date (null to clear)
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub promise_date: Option<Option<NaiveDate>>,
+
+    /// Storage location ID
+    pub storage_location_id: Option<Uuid>,
+
+    /// Quoted amount for the work (null to clear)
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub quote_amount: Option<Option<Decimal>>,
+
+    /// Actual amount charged (null to clear)
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub actual_amount: Option<Option<Decimal>>,
+
+    /// Employee who worked on the ticket (null to clear)
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub worked_by_employee_id: Option<Option<Uuid>>,
+}
+
+/// Check if admin PIN is valid.
+///
+/// For now this is a placeholder that always returns false.
+/// Will be implemented properly when password hashing utilities are available.
+async fn verify_admin_pin(pool: &sqlx::PgPool, pin: &str) -> Result<bool, AppError> {
+    // TODO: Implement actual PIN verification when password hashing is available
+    // For now, check if there's a store_settings row with a matching admin_pin_hash
+    // This is a temporary implementation that won't work until argon2 hashing is added
+
+    // Get the admin_pin_hash from store_settings
+    let result =
+        sqlx::query_scalar::<_, String>("SELECT admin_pin_hash FROM store_settings LIMIT 1")
+            .fetch_optional(pool)
+            .await?;
+
+    // If no store_settings row, admin PIN verification fails
+    if result.is_none() {
+        return Ok(false);
+    }
+
+    // TODO: When argon2 is available, verify the PIN against the hash
+    // For now, this always returns false - admin override won't work until
+    // facet-052 (password hashing utilities) is implemented
+    let _ = pin; // Suppress unused warning
+    Ok(false)
+}
+
+/// PUT /api/v1/tickets/:ticket_id - Update a ticket.
+pub async fn update_ticket(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(ticket_id): Path<Uuid>,
+    Json(body): Json<UpdateTicketRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // 1. Extract and validate employee ID from header
+    let employee_id = extract_employee_id(&headers)?;
+
+    // Verify employee exists and is active
+    let employee = EmployeeRepository::find_active_by_id(&state.db, employee_id)
+        .await?
+        .ok_or_else(|| AppError::validation("Employee not found or inactive"))?;
+
+    // 2. Find the ticket
+    let existing_ticket = TicketRepository::find_by_id(&state.db, ticket_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Ticket not found"))?;
+
+    // 3. Check if ticket is closed/archived
+    if !existing_ticket.status.is_open() {
+        // Check for admin override via X-Admin-PIN header
+        let has_admin_override = if let Some(pin_header) = headers.get("X-Admin-PIN") {
+            if let Ok(pin_str) = pin_header.to_str() {
+                verify_admin_pin(&state.db, pin_str).await?
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if !has_admin_override {
+            return Err(AppError::forbidden(
+                "Cannot edit closed or archived ticket without admin override",
+            ));
+        }
+    }
+
+    // 4. Track field changes for audit trail
+    let mut field_changes: Vec<CreateFieldHistory> = Vec::new();
+
+    // Helper to record a field change
+    macro_rules! track_change {
+        ($field_name:expr, $old_val:expr, $new_val:expr) => {
+            if let Some(ref new_value) = $new_val {
+                let old_str = $old_val.as_ref().map(|v| v.to_string());
+                let new_str = Some(new_value.to_string());
+                if old_str != new_str {
+                    field_changes.push(CreateFieldHistory {
+                        ticket_id,
+                        field_name: $field_name.to_string(),
+                        old_value: old_str,
+                        new_value: new_str,
+                        changed_by: employee.employee_id,
+                    });
+                }
+            }
+        };
+    }
+
+    // Helper for nullable fields (Option<Option<T>>)
+    macro_rules! track_nullable_change {
+        ($field_name:expr, $old_val:expr, $new_val:expr) => {
+            if let Some(ref new_outer) = $new_val {
+                let old_str = $old_val.as_ref().map(|v| v.to_string());
+                let new_str = new_outer.as_ref().map(|v| v.to_string());
+                if old_str != new_str {
+                    field_changes.push(CreateFieldHistory {
+                        ticket_id,
+                        field_name: $field_name.to_string(),
+                        old_value: old_str,
+                        new_value: new_str,
+                        changed_by: employee.employee_id,
+                    });
+                }
+            }
+        };
+    }
+
+    // Track changes for each field
+    track_change!("item_type", existing_ticket.item_type, body.item_type);
+    track_change!(
+        "item_description",
+        Some(existing_ticket.item_description.clone()),
+        body.item_description
+    );
+    track_change!(
+        "condition_notes",
+        Some(existing_ticket.condition_notes.clone()),
+        body.condition_notes
+    );
+    track_change!(
+        "requested_work",
+        Some(existing_ticket.requested_work.clone()),
+        body.requested_work
+    );
+    track_change!("is_rush", Some(existing_ticket.is_rush), body.is_rush);
+    track_nullable_change!(
+        "promise_date",
+        existing_ticket.promise_date,
+        body.promise_date
+    );
+    track_change!(
+        "storage_location_id",
+        Some(existing_ticket.storage_location_id),
+        body.storage_location_id
+    );
+    track_nullable_change!(
+        "quote_amount",
+        existing_ticket.quote_amount,
+        body.quote_amount
+    );
+    track_nullable_change!(
+        "actual_amount",
+        existing_ticket.actual_amount,
+        body.actual_amount
+    );
+    track_nullable_change!(
+        "worked_by",
+        existing_ticket.worked_by,
+        body.worked_by_employee_id
+    );
+
+    // 5. Build update struct
+    let update = UpdateTicket {
+        item_type: body.item_type,
+        item_description: body.item_description,
+        condition_notes: body.condition_notes,
+        requested_work: body.requested_work,
+        is_rush: body.is_rush,
+        promise_date: body.promise_date,
+        storage_location_id: body.storage_location_id,
+        quote_amount: body.quote_amount,
+        actual_amount: body.actual_amount,
+        worked_by: body.worked_by_employee_id,
+        last_modified_by: Some(employee.employee_id),
+    };
+
+    // 6. Update the ticket
+    let updated_ticket = TicketRepository::update(&state.db, ticket_id, update).await?;
+
+    // 7. Record field changes in history
+    FieldHistoryRepository::create_batch(&state.db, field_changes).await?;
+
+    // 8. Return updated ticket
+    Ok(Json(ApiResponse::success(updated_ticket)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -315,5 +555,69 @@ mod tests {
 
         let request: CreateTicketRequest = serde_json::from_str(json).unwrap();
         assert!(!request.is_rush);
+    }
+
+    #[test]
+    fn test_update_ticket_request_partial() {
+        let json = r#"{
+            "item_description": "Updated description",
+            "quote_amount": 175.00
+        }"#;
+
+        let request: UpdateTicketRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            request.item_description,
+            Some("Updated description".to_string())
+        );
+        assert!(request.quote_amount.is_some());
+        assert!(request.item_type.is_none());
+        assert!(request.is_rush.is_none());
+    }
+
+    #[test]
+    fn test_update_ticket_request_nullable_fields() {
+        // Test setting a nullable field to null explicitly
+        let json = r#"{
+            "promise_date": null,
+            "quote_amount": null
+        }"#;
+
+        let request: UpdateTicketRequest = serde_json::from_str(json).unwrap();
+        // When deserializing null, it becomes Some(None)
+        assert_eq!(request.promise_date, Some(None));
+        assert_eq!(request.quote_amount, Some(None));
+    }
+
+    #[test]
+    fn test_update_ticket_request_with_values() {
+        let json = r#"{
+            "item_description": "Gold ring",
+            "is_rush": true,
+            "storage_location_id": "660e8400-e29b-41d4-a716-446655440000",
+            "worked_by_employee_id": "770e8400-e29b-41d4-a716-446655440000"
+        }"#;
+
+        let request: UpdateTicketRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.item_description, Some("Gold ring".to_string()));
+        assert_eq!(request.is_rush, Some(true));
+        assert!(request.storage_location_id.is_some());
+        assert!(request.worked_by_employee_id.is_some());
+    }
+
+    #[test]
+    fn test_update_ticket_request_empty() {
+        let json = r#"{}"#;
+
+        let request: UpdateTicketRequest = serde_json::from_str(json).unwrap();
+        assert!(request.item_type.is_none());
+        assert!(request.item_description.is_none());
+        assert!(request.condition_notes.is_none());
+        assert!(request.requested_work.is_none());
+        assert!(request.is_rush.is_none());
+        assert!(request.promise_date.is_none());
+        assert!(request.storage_location_id.is_none());
+        assert!(request.quote_amount.is_none());
+        assert!(request.actual_amount.is_none());
+        assert!(request.worked_by_employee_id.is_none());
     }
 }
