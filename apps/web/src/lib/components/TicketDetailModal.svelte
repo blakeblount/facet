@@ -57,6 +57,7 @@
 	// Lightbox state
 	let lightboxPhoto: TicketPhoto | null = $state(null);
 	let lightboxIndex: number = $state(0);
+	let lightboxDialogEl: HTMLDialogElement;
 
 	// Photo upload state
 	let showUploadModal: boolean = $state(false);
@@ -184,6 +185,7 @@
 	function handleLightboxKeydown(e: KeyboardEvent) {
 		if (!lightboxPhoto) return;
 		if (e.key === 'Escape') {
+			e.preventDefault(); // Prevent native dialog close, handle manually
 			closeLightbox();
 		} else if (e.key === 'ArrowLeft') {
 			navigateLightbox('prev');
@@ -191,6 +193,17 @@
 			navigateLightbox('next');
 		}
 	}
+
+	// Sync lightbox dialog with lightboxPhoto state
+	$effect(() => {
+		if (!lightboxDialogEl) return;
+
+		if (lightboxPhoto) {
+			lightboxDialogEl.showModal();
+		} else {
+			lightboxDialogEl.close();
+		}
+	});
 
 	// Photo upload handlers
 	function openUploadModal() {
@@ -867,73 +880,70 @@
 	</div>
 </Modal>
 
-<!-- Photo Lightbox -->
-{#if lightboxPhoto}
-	<div
-		class="lightbox-overlay"
-		role="dialog"
-		tabindex="-1"
-		aria-modal="true"
-		aria-label="Photo viewer"
-		onclick={closeLightbox}
-		onkeydown={handleLightboxKeydown}
-	>
-		<button
-			type="button"
-			class="lightbox-close"
-			onclick={closeLightbox}
-			aria-label="Close photo viewer"
-		>
-			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-				<line x1="18" y1="6" x2="6" y2="18" />
-				<line x1="6" y1="6" x2="18" y2="18" />
-			</svg>
-		</button>
-
-		{#if ticket && ticket.photos.length > 1}
+<!-- Photo Lightbox (native dialog for top-layer rendering above parent modal) -->
+<dialog
+	bind:this={lightboxDialogEl}
+	class="lightbox-dialog"
+	aria-label="Photo viewer"
+	onclick={(e) => {
+		// Close on backdrop click (clicking the dialog element itself, not content)
+		if (e.target === lightboxDialogEl) closeLightbox();
+	}}
+	onkeydown={handleLightboxKeydown}
+>
+	{#if lightboxPhoto}
+		<div class="lightbox-inner">
 			<button
 				type="button"
-				class="lightbox-nav lightbox-prev"
-				onclick={(e) => {
-					e.stopPropagation();
-					navigateLightbox('prev');
-				}}
-				aria-label="Previous photo"
+				class="lightbox-close"
+				onclick={closeLightbox}
+				aria-label="Close photo viewer"
 			>
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-					<polyline points="15 18 9 12 15 6" />
+					<line x1="18" y1="6" x2="6" y2="18" />
+					<line x1="6" y1="6" x2="18" y2="18" />
 				</svg>
 			</button>
-			<button
-				type="button"
-				class="lightbox-nav lightbox-next"
-				onclick={(e) => {
-					e.stopPropagation();
-					navigateLightbox('next');
-				}}
-				aria-label="Next photo"
-			>
-				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-					<polyline points="9 18 15 12 9 6" />
-				</svg>
-			</button>
-		{/if}
 
-		<div class="lightbox-content" role="presentation" onclick={(e) => e.stopPropagation()}>
-			<img src={lightboxPhoto.url} alt="Ticket item full size" class="lightbox-image" />
-			<div class="lightbox-meta">
-				<span>
-					{formatDateTime(lightboxPhoto.uploaded_at)} by {lightboxPhoto.uploaded_by.name}
-				</span>
-				{#if ticket && ticket.photos.length > 1}
-					<span class="lightbox-counter">
-						{lightboxIndex + 1} / {ticket.photos.length}
+			{#if ticket && ticket.photos.length > 1}
+				<button
+					type="button"
+					class="lightbox-nav lightbox-prev"
+					onclick={() => navigateLightbox('prev')}
+					aria-label="Previous photo"
+				>
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<polyline points="15 18 9 12 15 6" />
+					</svg>
+				</button>
+				<button
+					type="button"
+					class="lightbox-nav lightbox-next"
+					onclick={() => navigateLightbox('next')}
+					aria-label="Next photo"
+				>
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<polyline points="9 18 15 12 9 6" />
+					</svg>
+				</button>
+			{/if}
+
+			<div class="lightbox-content">
+				<img src={lightboxPhoto.url} alt="Ticket item full size" class="lightbox-image" />
+				<div class="lightbox-meta">
+					<span>
+						{formatDateTime(lightboxPhoto.uploaded_at)} by {lightboxPhoto.uploaded_by.name}
 					</span>
-				{/if}
+					{#if ticket && ticket.photos.length > 1}
+						<span class="lightbox-counter">
+							{lightboxIndex + 1} / {ticket.photos.length}
+						</span>
+					{/if}
+				</div>
 			</div>
 		</div>
-	</div>
-{/if}
+	{/if}
+</dialog>
 
 <!-- Upload Photo Modal -->
 <Modal open={showUploadModal} title="Add Photos" onClose={closeUploadModal}>
@@ -1513,15 +1523,30 @@
 		margin-top: var(--space-lg, 1.5rem);
 	}
 
-	/* Lightbox */
-	.lightbox-overlay {
+	/* Lightbox (native dialog for top-layer rendering) */
+	.lightbox-dialog {
 		position: fixed;
 		inset: 0;
-		z-index: 1000;
+		width: 100vw;
+		height: 100vh;
+		max-width: 100vw;
+		max-height: 100vh;
+		padding: 0;
+		border: none;
+		background: transparent;
+	}
+
+	.lightbox-dialog::backdrop {
+		background-color: rgba(0, 0, 0, 0.9);
+	}
+
+	.lightbox-inner {
+		position: relative;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		background-color: rgba(0, 0, 0, 0.9);
+		width: 100%;
+		height: 100%;
 		padding: var(--space-xl, 2rem);
 	}
 
