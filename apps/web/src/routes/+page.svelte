@@ -1,8 +1,14 @@
 <script lang="ts">
 	import type { PageData } from './$types';
 	import { resolve } from '$app/paths';
+	import Button from '$lib/components/Button.svelte';
 
 	let { data }: { data: PageData } = $props();
+
+	function handleNewTicket() {
+		// TODO: Open intake form modal when implemented
+		console.log('New ticket clicked');
+	}
 </script>
 
 <div class="workboard">
@@ -21,8 +27,13 @@
 		<div class="lanes-container">
 			<div class="lane">
 				<div class="lane-header lane-header-intake">
-					<h2 class="lane-title">Intake</h2>
-					<span class="lane-count">{data.queue.lanes.intake.count}</span>
+					<div class="lane-header-left">
+						<h2 class="lane-title">Intake</h2>
+						<span class="lane-count">{data.queue.lanes.intake.count}</span>
+					</div>
+					<Button variant="secondary" size="sm" onclick={handleNewTicket} class="new-ticket-btn">
+						+ New
+					</Button>
 				</div>
 				<div class="lane-content">
 					{#each data.queue.lanes.intake.tickets as ticket (ticket.ticket_id)}
@@ -160,16 +171,35 @@
 	}
 
 	.lanes-container {
-		display: grid;
-		grid-template-columns: repeat(4, 1fr);
+		display: flex;
 		gap: var(--space-md);
 		flex: 1;
 		min-height: 0;
+		overflow-x: auto;
+		padding-bottom: var(--space-sm);
+	}
+
+	/* Custom scrollbar for horizontal scroll */
+	.lanes-container::-webkit-scrollbar {
+		height: 8px;
+	}
+
+	.lanes-container::-webkit-scrollbar-track {
+		background: var(--color-border);
+		border-radius: 4px;
+	}
+
+	.lanes-container::-webkit-scrollbar-thumb {
+		background-color: var(--color-text-muted);
+		border-radius: 4px;
 	}
 
 	.lane {
 		display: flex;
 		flex-direction: column;
+		flex: 1 0 280px;
+		min-width: 280px;
+		max-width: 360px;
 		background-color: var(--color-bg-card);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-sm);
@@ -180,8 +210,28 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		padding: var(--space-md);
+		padding: var(--space-sm) var(--space-md);
 		color: white;
+		gap: var(--space-sm);
+		min-height: 3rem;
+	}
+
+	.lane-header-left {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm);
+	}
+
+	/* New ticket button styling for contrast on colored header */
+	.lane-header :global(.new-ticket-btn) {
+		background-color: rgba(255, 255, 255, 0.95);
+		color: var(--color-intake);
+		border-color: transparent;
+		font-weight: 600;
+	}
+
+	.lane-header :global(.new-ticket-btn:hover) {
+		background-color: white;
 	}
 
 	.lane-header-intake {
