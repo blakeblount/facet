@@ -1288,3 +1288,42 @@ Add employee PIN modal flow to photo upload:
   - Footer reminder: "Please retain this receipt for pickup"
   - Footer reminder: "Ticket ID required for all inquiries: JR-XXXX"
 - The Vite dev server proxy correctly passes the PDF blob without issues (unlike earlier tests that reported 404 via proxy)
+
+---
+
+## TEST: facet-6zz - Admin Page Loads All Sections
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Verified dev servers running (web at localhost:5173, API at localhost:3001)
+2. Navigated to http://localhost:5173/admin
+3. Page loaded successfully with title "Facet - Jewelry Repair Tracking"
+4. Observed page layout with header "Admin Settings" and descriptive text
+5. Verified all 4 required sections are visible on the page
+6. Captured screenshot showing all sections
+7. Checked console for errors - none found
+
+### Success Criteria Results
+- [x] Page loads without errors - PASS - No console errors, page renders correctly
+- [x] Appearance/Theme section is visible - PASS - Shows "Appearance" heading with Imperial and Arcane theme options as clickable cards
+- [x] Store Information section is visible - PASS - Shows "Store Information" heading with Store Name (Jewelry Store), Phone (Not set), Address (Not set)
+- [x] Employees section is visible - PASS - Shows "Employees" heading with "No employees configured yet." placeholder
+- [x] Storage Locations section is visible - PASS - Shows "Storage Locations" heading with "No storage locations configured yet." placeholder
+- [x] Page has appropriate header/navigation - PASS - Shows Facet logo, search box, Workboard/Search/Settings navigation links, Settings gear icon is active/highlighted
+
+### Screenshots
+- .playwright-mcp/admin-page-all-sections.png - Full admin page showing all 4 sections
+
+### Issues Found
+- None - Admin page loads correctly with all sections visible
+
+### Notes
+- Admin page is accessible via /admin route or by clicking the Settings gear icon in the header
+- The page uses a card-based layout with sections clearly separated
+- Theme selection shows two options: Imperial ("Clean, sophisticated American luxury aesthetic") and Arcane ("Fantasy-inspired pixel art with steampunk undertones")
+- Store Information displays in a definition list format (term: definition pairs)
+- Employees and Storage Locations sections show helpful placeholder text when no data is configured
+- The page subtitle "Manage store settings, employees, and storage locations." accurately describes the page purpose
+- All sections use consistent heading styling (h2, uppercase small caps)
