@@ -2508,3 +2508,52 @@ Clear Filters implementation in `apps/web/src/routes/search/+page.svelte`:
 - The implementation distinguishes between "search query" (the main text search) and "filters" (status, date range)
 - URL query params are not automatically updated when filters are cleared client-side
 - Consider whether "Clear All" might be a clearer label if search text were included
+
+---
+
+## TEST: facet-uzw - Rush checkbox toggles visual state
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173 (workboard)
+2. Clicked "+ New" button in Intake lane to open intake form modal
+3. Observed intake form modal opened with "New Repair Ticket" title
+4. Located Rush toggle in "Repair Details" section
+5. Verified initial state: checkbox unchecked, label showing "Rush Order" with description "Prioritize this repair over others"
+6. Captured initial styling: borderColor=rgb(232, 230, 225), backgroundColor=rgb(250, 250, 248)
+7. Clicked Rush checkbox to toggle ON
+8. Verified checkbox is now checked, observed visual styling change
+9. Captured ON state styling: borderColor changed to theme color, backgroundColor=rgba(239, 68, 68, 0.1) (rush red tint)
+10. Clicked Rush checkbox again to toggle OFF
+11. Moved mouse away from checkbox to exit hover state
+12. Verified checkbox returned to unchecked state with original styling
+
+### Success Criteria Results
+- [x] Rush toggle is clearly visible with label - PASS - "Rush Order" title with "Prioritize this repair over others" description clearly visible
+- [x] Initial state is unchecked/off - PASS - Checkbox starts unchecked by default
+- [x] Clicking toggles the state - PASS - Click toggles between checked/unchecked
+- [x] ON state has distinct visual styling - PASS - Background changes to rgba(239, 68, 68, 0.1) with border color change
+- [x] OFF state returns to normal styling - PASS - Styling returns to original borderColor=rgb(232, 230, 225), backgroundColor=rgb(250, 250, 248)
+- [x] Toggle includes description text explaining rush priority - PASS - "Prioritize this repair over others" text shown
+
+### Screenshots
+- None captured (styling verified programmatically via computed styles)
+
+### Technical Details
+Rush toggle implementation in `apps/web/src/lib/components/IntakeFormModal.svelte`:
+- `.rush-checkbox` checkbox bound to `isRush` state variable
+- `.rush-label` wrapper provides visual styling container
+- CSS `.rush-label:has(.rush-checkbox:checked)` selector applies checked state styling
+- Checked state: `border-color: var(--color-rush, #ef4444)`, `background-color: rgba(239, 68, 68, 0.1)`
+- Hover state also changes border color to rush color with lighter background
+
+### Issues Found
+- None - Rush toggle functions correctly with clear visual feedback
+
+### Notes
+- The Rush toggle uses modern CSS `:has()` selector for checked state styling
+- Colors are properly themed using CSS variables (--color-rush, --color-border, etc.)
+- The toggle is positioned in a full-width row spanning both columns in the form grid
+- Accessibility: checkbox has proper label association via wrapper label element
