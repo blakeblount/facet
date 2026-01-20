@@ -2,13 +2,12 @@
 //!
 //! Models represent the core business entities used throughout the application.
 
+pub mod customer;
+pub mod employee;
+pub mod status_history;
 pub mod ticket;
 
+pub use customer::{CreateCustomer, Customer};
+pub use employee::{Employee, EmployeeRole, EmployeeSummary};
+pub use status_history::{CreateStatusHistory, StatusHistoryEntry};
 pub use ticket::{CreateTicket, Ticket, TicketFilters, TicketStatus, TicketSummary, UpdateTicket};
-
-// Future model modules:
-// pub mod customer;
-// pub mod employee;
-// pub mod location;
-// pub mod photo;
-// pub mod audit;

@@ -12,8 +12,10 @@
 
 mod health;
 
-use axum::Router;
+use axum::{routing::post, Router};
 use sqlx::postgres::PgPool;
+
+use crate::handlers;
 
 pub use health::health_check;
 
@@ -38,16 +40,11 @@ impl AppState {
 /// The router is configured with shared application state containing
 /// the database pool.
 pub fn api_router(state: AppState) -> Router {
-    // API v1 routes - will be expanded as handlers are implemented
-    let api_v1 = Router::new();
-    // Future routes:
-    // .nest("/tickets", tickets::router())
-    // .nest("/customers", customers::router())
-    // .nest("/employees", employees::router())
-    // .nest("/locations", locations::router())
-    // .nest("/queue", queue::router())
-    // .nest("/settings", settings::router())
-    // .nest("/admin", admin::router())
+    // Ticket routes
+    let tickets_routes = Router::new().route("/", post(handlers::create_ticket));
+
+    // API v1 routes
+    let api_v1 = Router::new().nest("/tickets", tickets_routes);
 
     Router::new()
         .route("/health", axum::routing::get(health::health_check))
