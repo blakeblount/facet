@@ -1,9 +1,23 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import { resolve } from '$app/paths';
+	import TicketDetailModal from '$lib/components/TicketDetailModal.svelte';
 
 	let { data }: { data: PageData } = $props();
 	let searchQuery = $state(data.query || '');
+
+	// Modal state
+	let selectedTicketId: string | null = $state(null);
+	let isModalOpen = $state(false);
+
+	function openTicketModal(ticketId: string) {
+		selectedTicketId = ticketId;
+		isModalOpen = true;
+	}
+
+	function closeModal() {
+		isModalOpen = false;
+		selectedTicketId = null;
+	}
 </script>
 
 <div class="search-page">
@@ -41,10 +55,12 @@
 			{#if data.results.tickets.length > 0}
 				<div class="results-list">
 					{#each data.results.tickets as ticket (ticket.ticket_id)}
-						<a
-							href={resolve('/tickets/[id]', { id: ticket.ticket_id })}
+						<button
+							type="button"
 							class="result-card"
 							class:is-rush={ticket.is_rush}
+							class:is-closed={ticket.status === 'closed' || ticket.status === 'archived'}
+							onclick={() => openTicketModal(ticket.ticket_id)}
 						>
 							<div class="result-header">
 								<span class="ticket-code">{ticket.friendly_code}</span>
@@ -59,7 +75,7 @@
 							{#if ticket.is_rush}
 								<span class="rush-badge">RUSH</span>
 							{/if}
-						</a>
+						</button>
 					{/each}
 				</div>
 			{:else}
@@ -70,6 +86,8 @@
 		<p class="search-hint">Enter a search term to find tickets.</p>
 	{/if}
 </div>
+
+<TicketDetailModal ticketId={selectedTicketId} open={isModalOpen} onClose={closeModal} />
 
 <style>
 	.search-page {
@@ -159,12 +177,15 @@
 	.result-card {
 		position: relative;
 		display: block;
+		width: 100%;
 		padding: var(--space-md);
 		background-color: var(--color-bg-card);
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-md);
 		color: var(--color-text);
-		text-decoration: none;
+		text-align: left;
+		font: inherit;
+		cursor: pointer;
 		transition:
 			box-shadow var(--transition-fast),
 			transform var(--transition-fast);
@@ -173,11 +194,19 @@
 	.result-card:hover {
 		box-shadow: var(--shadow-md);
 		transform: translateY(-1px);
-		text-decoration: none;
+	}
+
+	.result-card:focus-visible {
+		outline: 2px solid var(--color-primary);
+		outline-offset: 2px;
 	}
 
 	.result-card.is-rush {
 		border-left: 4px solid var(--color-rush);
+	}
+
+	.result-card.is-closed {
+		opacity: 0.7;
 	}
 
 	.result-header {

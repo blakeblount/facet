@@ -20,7 +20,7 @@ export const load: PageServerLoad = async ({ url, fetch }) => {
 	try {
 		const searchParams = new URLSearchParams({
 			search: query,
-			include_archived: 'false',
+			include_archived: 'true',
 			limit: '50'
 		});
 
