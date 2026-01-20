@@ -443,6 +443,38 @@ export interface StorageLocation {
 	updated_at: string;
 }
 
+/**
+ * Summary view of a storage location.
+ */
+export interface StorageLocationSummary {
+	location_id: string;
+	name: string;
+	is_active: boolean;
+}
+
+/**
+ * Response for listing storage locations.
+ */
+export interface ListLocationsResponse {
+	locations: StorageLocationSummary[];
+	count: number;
+}
+
+/**
+ * Request body for creating a storage location.
+ */
+export interface CreateStorageLocationRequest {
+	name: string;
+}
+
+/**
+ * Request body for updating a storage location.
+ */
+export interface UpdateStorageLocationRequest {
+	name?: string;
+	is_active?: boolean;
+}
+
 // =============================================================================
 // Store Settings Types
 // =============================================================================

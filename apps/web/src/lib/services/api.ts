@@ -27,7 +27,10 @@ import type {
 	CreateCustomerRequest,
 	EmployeeSummary,
 	VerifyPinResponse,
-	StorageLocation,
+	StorageLocationSummary,
+	ListLocationsResponse,
+	CreateStorageLocationRequest,
+	UpdateStorageLocationRequest,
 	StoreSettings,
 	UpdateStoreSettingsRequest,
 	CreateEmployeeRequest,
@@ -579,15 +582,45 @@ export async function verifyEmployeePin(pin: string): Promise<VerifyPinResponse>
 }
 
 // =============================================================================
-// Storage Location Endpoints (Placeholder - not yet implemented in backend)
+// Storage Location Endpoints
 // =============================================================================
 
 /**
  * List all storage locations.
- * Note: This endpoint is not yet implemented in the backend.
+ * Public endpoint - does not require authentication.
+ * By default returns only active locations.
+ * Use includeInactive=true to include inactive locations.
  */
-export async function listStorageLocations(): Promise<StorageLocation[]> {
-	return get<StorageLocation[]>('/locations');
+export async function listStorageLocations(
+	includeInactive?: boolean
+): Promise<ListLocationsResponse> {
+	const params = includeInactive ? { include_inactive: true } : undefined;
+	return get<ListLocationsResponse>('/locations', params);
+}
+
+/**
+ * Create a new storage location (admin only).
+ * Requires admin PIN for authorization.
+ * Returns the created location summary.
+ */
+export async function createStorageLocation(
+	adminPin: string,
+	request: CreateStorageLocationRequest
+): Promise<StorageLocationSummary> {
+	return post<StorageLocationSummary>('/locations', request, adminPin);
+}
+
+/**
+ * Update a storage location (admin only).
+ * Requires admin PIN for authorization.
+ * Returns the updated location summary.
+ */
+export async function updateStorageLocation(
+	adminPin: string,
+	locationId: string,
+	request: UpdateStorageLocationRequest
+): Promise<StorageLocationSummary> {
+	return put<StorageLocationSummary>(`/locations/${locationId}`, request, adminPin);
 }
 
 // =============================================================================
@@ -739,6 +772,10 @@ export type {
 	EmployeeSummary,
 	VerifyPinResponse,
 	StorageLocation,
+	StorageLocationSummary,
+	ListLocationsResponse,
+	CreateStorageLocationRequest,
+	UpdateStorageLocationRequest,
 	StoreSettings,
 	UpdateStoreSettingsRequest,
 	EmployeeAttribution,

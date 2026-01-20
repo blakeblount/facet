@@ -10,11 +10,15 @@
 		deleteEmployee,
 		getStoreSettings,
 		updateStoreSettings,
+		listStorageLocations,
+		createStorageLocation,
+		updateStorageLocation,
 		ApiClientError,
 		type VerifyPinResponse,
 		type EmployeeSummary,
 		type EmployeeRole,
-		type StoreSettings
+		type StoreSettings,
+		type StorageLocationSummary
 	} from '$lib/services/api';
 
 	type SettingsTab = 'store-info' | 'employees' | 'locations' | 'appearance';
@@ -70,6 +74,19 @@
 	let storeFormAddress = $state('');
 	let storeFormTicketPrefix = $state('');
 
+	// Locations tab state
+	let locations: StorageLocationSummary[] = $state([]);
+	let locationsLoading = $state(false);
+	let locationsError = $state('');
+	let showInactiveLocations = $state(false);
+
+	// Location form state
+	let showLocationForm = $state(false);
+	let editingLocation: StorageLocationSummary | null = $state(null);
+	let locationFormName = $state('');
+	let locationFormError = $state('');
+	let locationFormSaving = $state(false);
+
 	// Tab state
 	let activeTab: SettingsTab = $state('store-info');
 
@@ -120,6 +137,13 @@
 			storeInfoSaving = false;
 			storeInfoSuccess = '';
 			resetStoreInfoForm();
+
+			// Reset locations state
+			locations = [];
+			locationsLoading = false;
+			locationsError = '';
+			showInactiveLocations = false;
+			resetLocationForm();
 		}
 	});
 
@@ -455,6 +479,121 @@
 			}
 		} finally {
 			deleteLoading = false;
+		}
+	}
+
+	// =============================================================================
+	// Locations Tab Functions
+	// =============================================================================
+
+	async function loadLocations() {
+		locationsLoading = true;
+		locationsError = '';
+
+		try {
+			const response = await listStorageLocations(showInactiveLocations);
+			locations = response.locations;
+		} catch (err) {
+			if (err instanceof ApiClientError) {
+				locationsError = err.message || 'Failed to load locations';
+			} else {
+				locationsError = 'An error occurred while loading locations';
+			}
+		} finally {
+			locationsLoading = false;
+		}
+	}
+
+	// Load/reload locations when tab becomes active or showInactiveLocations changes
+	let currentShowInactiveLocations = $derived(showInactiveLocations);
+
+	$effect(() => {
+		if (
+			isAuthenticated &&
+			activeTab === 'locations' &&
+			currentShowInactiveLocations !== undefined
+		) {
+			loadLocations();
+		}
+	});
+
+	function resetLocationForm() {
+		showLocationForm = false;
+		editingLocation = null;
+		locationFormName = '';
+		locationFormError = '';
+		locationFormSaving = false;
+	}
+
+	function handleAddLocation() {
+		resetLocationForm();
+		showLocationForm = true;
+	}
+
+	function handleEditLocation(location: StorageLocationSummary) {
+		resetLocationForm();
+		editingLocation = location;
+		locationFormName = location.name;
+		showLocationForm = true;
+	}
+
+	function handleCancelLocationForm() {
+		resetLocationForm();
+	}
+
+	async function handleSaveLocation() {
+		if (!adminPin) return;
+
+		// Validate
+		if (!locationFormName.trim()) {
+			locationFormError = 'Name is required';
+			return;
+		}
+
+		locationFormSaving = true;
+		locationFormError = '';
+
+		try {
+			if (editingLocation) {
+				// Update existing location
+				await updateStorageLocation(adminPin, editingLocation.location_id, {
+					name: locationFormName.trim()
+				});
+			} else {
+				// Create new location
+				await createStorageLocation(adminPin, {
+					name: locationFormName.trim()
+				});
+			}
+
+			resetLocationForm();
+			await loadLocations();
+		} catch (err) {
+			if (err instanceof ApiClientError) {
+				locationFormError = err.message || 'Failed to save location';
+			} else {
+				locationFormError = 'An error occurred while saving';
+			}
+		} finally {
+			locationFormSaving = false;
+		}
+	}
+
+	async function handleToggleLocationActive(location: StorageLocationSummary) {
+		if (!adminPin) return;
+
+		try {
+			await updateStorageLocation(adminPin, location.location_id, {
+				is_active: !location.is_active
+			});
+			await loadLocations();
+		} catch (err) {
+			// Show error in the locations section
+			if (err instanceof ApiClientError) {
+				locationsError = err.message || 'Failed to update location';
+			} else {
+				locationsError = 'An error occurred';
+			}
 		}
 	}
 </script>
@@ -805,11 +944,122 @@
 						class:active={activeTab === 'locations'}
 						hidden={activeTab !== 'locations'}
 					>
-						<div class="panel-placeholder">
-							<h3 class="placeholder-title">Storage Locations</h3>
-							<p class="placeholder-text">
-								Configure storage bins, safes, and other item locations here.
-							</p>
+						<div class="locations-panel">
+							<!-- Header with Add button and filter -->
+							<div class="locations-header">
+								<h3 class="panel-title">Storage Locations</h3>
+								<div class="locations-actions">
+									<label class="show-inactive-label">
+										<input
+											type="checkbox"
+											bind:checked={showInactiveLocations}
+											class="show-inactive-checkbox"
+										/>
+										Show inactive
+									</label>
+									<Button
+										variant="primary"
+										size="sm"
+										onclick={handleAddLocation}
+										disabled={showLocationForm}
+									>
+										Add Location
+									</Button>
+								</div>
+							</div>
+
+							<!-- Error message -->
+							{#if locationsError}
+								<div class="locations-error">{locationsError}</div>
+							{/if}
+
+							<!-- Loading state -->
+							{#if locationsLoading}
+								<div class="locations-loading">Loading locations...</div>
+							{:else}
+								<!-- Location form (add/edit) -->
+								{#if showLocationForm}
+									<div class="location-form">
+										<h4 class="location-form-title">
+											{editingLocation ? 'Edit Location' : 'Add Location'}
+										</h4>
+
+										<div class="location-form-fields">
+											<Input
+												label="Name"
+												placeholder="e.g., Safe Drawer 1, Workbench A"
+												bind:value={locationFormName}
+												disabled={locationFormSaving}
+												required
+											/>
+										</div>
+
+										{#if locationFormError}
+											<div class="location-form-error">{locationFormError}</div>
+										{/if}
+
+										<div class="location-form-actions">
+											<Button
+												variant="secondary"
+												size="sm"
+												onclick={handleCancelLocationForm}
+												disabled={locationFormSaving}
+											>
+												Cancel
+											</Button>
+											<Button
+												variant="primary"
+												size="sm"
+												onclick={handleSaveLocation}
+												loading={locationFormSaving}
+												disabled={locationFormSaving}
+											>
+												{editingLocation ? 'Save Changes' : 'Add Location'}
+											</Button>
+										</div>
+									</div>
+								{/if}
+
+								<!-- Location list -->
+								{#if locations.length === 0}
+									<div class="locations-empty">
+										{showInactiveLocations ? 'No locations found.' : 'No active locations found.'}
+									</div>
+								{:else}
+									<div class="locations-list">
+										{#each locations as location (location.location_id)}
+											<div class="location-row" class:inactive={!location.is_active}>
+												<div class="location-info">
+													<span class="location-name">{location.name}</span>
+													{#if !location.is_active}
+														<span class="location-status-badge">Inactive</span>
+													{/if}
+												</div>
+												<div class="location-actions">
+													<button
+														type="button"
+														class="action-btn edit-btn"
+														onclick={() => handleEditLocation(location)}
+														title="Edit"
+														disabled={showLocationForm}
+													>
+														Edit
+													</button>
+													<button
+														type="button"
+														class="action-btn toggle-btn"
+														onclick={() => handleToggleLocationActive(location)}
+														title={location.is_active ? 'Deactivate' : 'Activate'}
+														disabled={showLocationForm}
+													>
+														{location.is_active ? 'Deactivate' : 'Activate'}
+													</button>
+												</div>
+											</div>
+										{/each}
+									</div>
+								{/if}
+							{/if}
 						</div>
 					</div>
 
@@ -1088,7 +1338,9 @@
 
 	.employees-error,
 	.delete-error,
-	.employee-form-error {
+	.employee-form-error,
+	.locations-error,
+	.location-form-error {
 		padding: var(--space-sm, 0.5rem);
 		background-color: var(--color-danger-light, #fef2f2);
 		border: 1px solid var(--color-danger, #dc2626);
@@ -1098,7 +1350,9 @@
 	}
 
 	.employees-loading,
-	.employees-empty {
+	.employees-empty,
+	.locations-loading,
+	.locations-empty {
 		text-align: center;
 		padding: var(--space-lg, 1.5rem);
 		color: var(--color-text-muted, #64748b);
@@ -1294,6 +1548,108 @@
 
 	.delete-btn:hover:not(:disabled) {
 		background-color: var(--color-danger-muted, #fecaca);
+	}
+
+	/* Locations Panel */
+	.locations-panel {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-md, 1rem);
+		padding: var(--space-sm, 0.5rem) 0;
+	}
+
+	.locations-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-md, 1rem);
+	}
+
+	.locations-actions {
+		display: flex;
+		align-items: center;
+		gap: var(--space-md, 1rem);
+	}
+
+	/* Location Form */
+	.location-form {
+		padding: var(--space-md, 1rem);
+		background-color: var(--color-bg-subtle, #f8fafc);
+		border: 1px solid var(--color-border, #e2e8f0);
+		border-radius: var(--radius-md, 0.5rem);
+	}
+
+	.location-form-title {
+		margin: 0 0 var(--space-md, 1rem);
+		font-size: 0.875rem;
+		font-weight: 600;
+		color: var(--color-text, #1e293b);
+	}
+
+	.location-form-fields {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-md, 1rem);
+	}
+
+	.location-form-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: var(--space-sm, 0.5rem);
+		margin-top: var(--space-md, 1rem);
+	}
+
+	/* Location List */
+	.locations-list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-xs, 0.25rem);
+	}
+
+	.location-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: var(--space-sm, 0.5rem) var(--space-md, 1rem);
+		background-color: white;
+		border: 1px solid var(--color-border, #e2e8f0);
+		border-radius: var(--radius-sm, 0.25rem);
+		transition: background-color var(--transition-fast, 150ms ease);
+	}
+
+	.location-row:hover {
+		background-color: var(--color-bg-subtle, #f8fafc);
+	}
+
+	.location-row.inactive {
+		opacity: 0.6;
+	}
+
+	.location-info {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm, 0.5rem);
+	}
+
+	.location-name {
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--color-text, #1e293b);
+	}
+
+	.location-status-badge {
+		padding: 0.125rem 0.5rem;
+		font-size: 0.75rem;
+		font-weight: 500;
+		background-color: var(--color-warning-light, #fef3c7);
+		color: var(--color-warning-dark, #92400e);
+		border-radius: var(--radius-full, 9999px);
+	}
+
+	.location-actions {
+		display: flex;
+		align-items: center;
+		gap: var(--space-xs, 0.25rem);
 	}
 
 	/* Responsive */
