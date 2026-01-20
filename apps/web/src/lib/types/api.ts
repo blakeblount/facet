@@ -384,6 +384,15 @@ export interface EmployeeSummary {
 	is_active: boolean;
 }
 
+/**
+ * Response from PIN verification.
+ */
+export interface VerifyPinResponse {
+	employee_id: string;
+	name: string;
+	role: EmployeeRole;
+}
+
 // =============================================================================
 // Storage Location Types
 // =============================================================================

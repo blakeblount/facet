@@ -733,7 +733,6 @@
 			</button>
 		{/if}
 
-		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<div class="lightbox-content" role="presentation" onclick={(e) => e.stopPropagation()}>
 			<img src={lightboxPhoto.url} alt="Ticket item full size" class="lightbox-image" />
 			<div class="lightbox-meta">

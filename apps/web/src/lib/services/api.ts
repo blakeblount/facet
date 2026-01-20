@@ -26,6 +26,7 @@ import type {
 	Customer,
 	CreateCustomerRequest,
 	EmployeeSummary,
+	VerifyPinResponse,
 	StorageLocation,
 	StoreSettings
 } from '$lib/types/api';
@@ -444,10 +445,11 @@ export async function listEmployees(): Promise<EmployeeSummary[]> {
 
 /**
  * Verify employee PIN and get employee info.
- * Note: This endpoint is not yet implemented in the backend.
+ * Returns employee_id, name, and role if the PIN is valid.
+ * Throws ApiClientError with code 'INVALID_PIN' if the PIN is invalid.
  */
-export async function verifyEmployeePin(employeeId: string, pin: string): Promise<EmployeeSummary> {
-	return post<EmployeeSummary>(`/employees/${employeeId}/verify`, { pin });
+export async function verifyEmployeePin(pin: string): Promise<VerifyPinResponse> {
+	return post<VerifyPinResponse>('/employees/verify', { pin });
 }
 
 // =============================================================================
@@ -594,6 +596,7 @@ export type {
 	Customer,
 	CreateCustomerRequest,
 	EmployeeSummary,
+	VerifyPinResponse,
 	StorageLocation,
 	StoreSettings,
 	EmployeeAttribution,
