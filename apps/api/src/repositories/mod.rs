@@ -8,9 +8,11 @@ pub mod employee;
 pub mod field_history;
 pub mod status_history;
 pub mod ticket;
+pub mod ticket_photo;
 
 pub use customer::CustomerRepository;
 pub use employee::EmployeeRepository;
 pub use field_history::FieldHistoryRepository;
 pub use status_history::StatusHistoryRepository;
 pub use ticket::TicketRepository;
+pub use ticket_photo::TicketPhotoRepository;

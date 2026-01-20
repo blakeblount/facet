@@ -7,6 +7,7 @@ pub mod employee;
 pub mod field_history;
 pub mod status_history;
 pub mod ticket;
+pub mod ticket_photo;
 
 pub use customer::{CreateCustomer, Customer};
 pub use employee::{CreateEmployee, Employee, EmployeeRole, EmployeeSummary, UpdateEmployee};
@@ -16,3 +17,4 @@ pub use ticket::{
     CreateTicket, QueueTicket, Ticket, TicketFilters, TicketSearchParams, TicketStatus,
     TicketSummary, UpdateTicket, WorkboardQueue,
 };
+pub use ticket_photo::{CreateTicketPhoto, TicketPhoto, TicketPhotoSummary};
