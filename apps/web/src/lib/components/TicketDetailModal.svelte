@@ -9,9 +9,11 @@
 		open: boolean;
 		/** Callback when modal closes */
 		onClose: () => void;
+		/** Whether editing mode is enabled (shows edit indicators) */
+		isEditing?: boolean;
 	}
 
-	let { ticketId, open, onClose }: Props = $props();
+	let { ticketId, open, onClose, isEditing = false }: Props = $props();
 
 	let ticket: TicketDetailResponse | null = $state(null);
 	let loading: boolean = $state(false);
@@ -152,22 +154,58 @@
 				<h3 class="section-title">Item Details</h3>
 				<div class="section-content">
 					{#if ticket.item_type}
-						<div class="info-row">
+						<div class="info-row" class:editable={isEditing}>
 							<span class="info-label">Type</span>
-							<span class="info-value">{ticket.item_type}</span>
+							<span class="info-value">
+								{ticket.item_type}
+								{#if isEditing}
+									<svg class="edit-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+										<path
+											d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM11.189 6.25 9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064l6.286-6.286Z"
+										/>
+									</svg>
+								{/if}
+							</span>
 						</div>
 					{/if}
-					<div class="info-row">
+					<div class="info-row" class:editable={isEditing}>
 						<span class="info-label">Description</span>
-						<span class="info-value">{ticket.item_description}</span>
+						<span class="info-value">
+							{ticket.item_description}
+							{#if isEditing}
+								<svg class="edit-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+									<path
+										d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM11.189 6.25 9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064l6.286-6.286Z"
+									/>
+								</svg>
+							{/if}
+						</span>
 					</div>
-					<div class="info-row">
+					<div class="info-row" class:editable={isEditing}>
 						<span class="info-label">Condition</span>
-						<span class="info-value text-block">{ticket.condition_notes}</span>
+						<span class="info-value text-block">
+							{ticket.condition_notes}
+							{#if isEditing}
+								<svg class="edit-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+									<path
+										d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM11.189 6.25 9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064l6.286-6.286Z"
+									/>
+								</svg>
+							{/if}
+						</span>
 					</div>
-					<div class="info-row">
+					<div class="info-row" class:editable={isEditing}>
 						<span class="info-label">Requested Work</span>
-						<span class="info-value text-block">{ticket.requested_work}</span>
+						<span class="info-value text-block">
+							{ticket.requested_work}
+							{#if isEditing}
+								<svg class="edit-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+									<path
+										d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM11.189 6.25 9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064l6.286-6.286Z"
+									/>
+								</svg>
+							{/if}
+						</span>
 					</div>
 				</div>
 			</section>
@@ -197,13 +235,31 @@
 			<section class="detail-section">
 				<h3 class="section-title">Pricing</h3>
 				<div class="section-content">
-					<div class="info-row">
+					<div class="info-row" class:editable={isEditing}>
 						<span class="info-label">Quote</span>
-						<span class="info-value">{formatCurrency(ticket.quote_amount)}</span>
+						<span class="info-value">
+							{formatCurrency(ticket.quote_amount)}
+							{#if isEditing}
+								<svg class="edit-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+									<path
+										d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM11.189 6.25 9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064l6.286-6.286Z"
+									/>
+								</svg>
+							{/if}
+						</span>
 					</div>
-					<div class="info-row">
+					<div class="info-row" class:editable={isEditing}>
 						<span class="info-label">Actual Charged</span>
-						<span class="info-value">{formatCurrency(ticket.actual_amount)}</span>
+						<span class="info-value">
+							{formatCurrency(ticket.actual_amount)}
+							{#if isEditing}
+								<svg class="edit-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+									<path
+										d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM11.189 6.25 9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064l6.286-6.286Z"
+									/>
+								</svg>
+							{/if}
+						</span>
 					</div>
 				</div>
 			</section>
@@ -212,13 +268,31 @@
 			<section class="detail-section">
 				<h3 class="section-title">Status & Location</h3>
 				<div class="section-content">
-					<div class="info-row">
+					<div class="info-row" class:editable={isEditing}>
 						<span class="info-label">Promise Date</span>
-						<span class="info-value">{formatDate(ticket.promise_date)}</span>
+						<span class="info-value">
+							{formatDate(ticket.promise_date)}
+							{#if isEditing}
+								<svg class="edit-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+									<path
+										d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM11.189 6.25 9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064l6.286-6.286Z"
+									/>
+								</svg>
+							{/if}
+						</span>
 					</div>
-					<div class="info-row">
+					<div class="info-row" class:editable={isEditing}>
 						<span class="info-label">Storage Location</span>
-						<span class="info-value">{ticket.storage_location.name}</span>
+						<span class="info-value">
+							{ticket.storage_location.name}
+							{#if isEditing}
+								<svg class="edit-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+									<path
+										d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM11.189 6.25 9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064l6.286-6.286Z"
+									/>
+								</svg>
+							{/if}
+						</span>
 					</div>
 				</div>
 			</section>
@@ -441,6 +515,36 @@
 	.info-value.text-block {
 		white-space: pre-wrap;
 		line-height: 1.5;
+	}
+
+	/* Editable indicators */
+	.info-row.editable {
+		cursor: pointer;
+		border-radius: var(--radius-sm, 0.25rem);
+		margin-left: calc(-1 * var(--space-xs, 0.25rem));
+		margin-right: calc(-1 * var(--space-xs, 0.25rem));
+		padding-left: var(--space-xs, 0.25rem);
+		padding-right: var(--space-xs, 0.25rem);
+		transition: background-color var(--transition-fast, 150ms ease);
+	}
+
+	.info-row.editable:hover {
+		background-color: var(--color-bg-hover, rgba(0, 0, 0, 0.04));
+	}
+
+	.edit-icon {
+		width: 14px;
+		height: 14px;
+		margin-left: var(--space-xs, 0.25rem);
+		color: var(--color-primary, #1e40af);
+		opacity: 0.6;
+		vertical-align: middle;
+		flex-shrink: 0;
+		transition: opacity var(--transition-fast, 150ms ease);
+	}
+
+	.info-row.editable:hover .edit-icon {
+		opacity: 1;
 	}
 
 	/* Photos */
