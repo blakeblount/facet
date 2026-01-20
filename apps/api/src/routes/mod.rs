@@ -109,6 +109,9 @@ pub fn api_router(state: AppState) -> Router {
         get(handlers::get_settings).put(handlers::update_settings),
     );
 
+    // Storage location routes
+    let locations_routes = Router::new().route("/", get(handlers::list_locations));
+
     // API v1 routes
     let api_v1 = Router::new()
         .nest("/tickets", tickets_routes)
@@ -116,7 +119,8 @@ pub fn api_router(state: AppState) -> Router {
         .nest("/employees", employees_routes)
         .nest("/customers", customers_routes)
         .nest("/admin", admin_routes)
-        .nest("/settings", settings_routes);
+        .nest("/settings", settings_routes)
+        .nest("/locations", locations_routes);
 
     Router::new()
         .route("/health", axum::routing::get(health::health_check))

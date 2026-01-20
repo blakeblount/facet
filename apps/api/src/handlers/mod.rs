@@ -6,6 +6,7 @@
 pub mod admin;
 pub mod customers;
 pub mod employees;
+pub mod locations;
 pub mod settings;
 pub mod tickets;
 
@@ -14,6 +15,7 @@ pub use customers::{get_customer, search_customers};
 pub use employees::{
     create_employee, delete_employee, list_employees, update_employee, verify_employee_pin,
 };
+pub use locations::list_locations;
 pub use settings::{get_settings, update_settings};
 pub use tickets::{
     add_note, change_status, close_ticket, create_ticket, delete_photo, get_label_pdf, get_queue,
