@@ -2,14 +2,17 @@
 	import Modal from './Modal.svelte';
 	import Button from './Button.svelte';
 	import Input from './Input.svelte';
+	import PhotoUpload from './PhotoUpload.svelte';
 	import {
 		getTicket,
 		fetchReceiptPdf,
 		fetchLabelPdf,
 		closeTicket,
 		type TicketDetailResponse,
-		type TicketStatus
+		type TicketStatus,
+		type TicketPhoto
 	} from '$lib/services/api';
+	import { uploadTicketPhoto } from '$lib/services/api';
 
 	interface Props {
 		/** The ticket ID to display */
@@ -44,6 +47,17 @@
 	let isPrintingReceipt: boolean = $state(false);
 	let isPrintingTag: boolean = $state(false);
 	let printError: string | null = $state(null);
+
+	// Lightbox state
+	let lightboxPhoto: TicketPhoto | null = $state(null);
+	let lightboxIndex: number = $state(0);
+
+	// Photo upload state
+	let showUploadModal: boolean = $state(false);
+	let uploadFiles: File[] = $state([]);
+	let isUploading: boolean = $state(false);
+	let uploadProgress: number = $state(0);
+	let uploadError: string | null = $state(null);
 
 	// Fetch ticket when ticketId changes and modal is open
 	$effect(() => {
@@ -126,6 +140,82 @@
 	// Action handlers
 	function handleEditTicket() {
 		onEdit?.();
+	}
+
+	// Lightbox handlers
+	function openLightbox(photo: TicketPhoto) {
+		if (!ticket) return;
+		lightboxPhoto = photo;
+		lightboxIndex = ticket.photos.findIndex((p) => p.photo_id === photo.photo_id);
+	}
+
+	function closeLightbox() {
+		lightboxPhoto = null;
+	}
+
+	function navigateLightbox(direction: 'prev' | 'next') {
+		if (!ticket || ticket.photos.length === 0) return;
+		if (direction === 'prev') {
+			lightboxIndex = lightboxIndex > 0 ? lightboxIndex - 1 : ticket.photos.length - 1;
+		} else {
+			lightboxIndex = lightboxIndex < ticket.photos.length - 1 ? lightboxIndex + 1 : 0;
+		}
+		lightboxPhoto = ticket.photos[lightboxIndex];
+	}
+
+	function handleLightboxKeydown(e: KeyboardEvent) {
+		if (!lightboxPhoto) return;
+		if (e.key === 'Escape') {
+			closeLightbox();
+		} else if (e.key === 'ArrowLeft') {
+			navigateLightbox('prev');
+		} else if (e.key === 'ArrowRight') {
+			navigateLightbox('next');
+		}
+	}
+
+	// Photo upload handlers
+	function openUploadModal() {
+		uploadFiles = [];
+		uploadError = null;
+		uploadProgress = 0;
+		showUploadModal = true;
+	}
+
+	function closeUploadModal() {
+		showUploadModal = false;
+	}
+
+	async function handleUploadPhotos() {
+		if (!ticket || uploadFiles.length === 0 || isUploading) return;
+
+		isUploading = true;
+		uploadError = null;
+		uploadProgress = 0;
+
+		try {
+			// Upload each file sequentially
+			for (let i = 0; i < uploadFiles.length; i++) {
+				const file = uploadFiles[i];
+				const fileProgress = (completed: number) => {
+					// Calculate overall progress across all files
+					const baseProgress = (i / uploadFiles.length) * 100;
+					const fileContribution = completed / uploadFiles.length;
+					uploadProgress = Math.round(baseProgress + fileContribution);
+				};
+
+				await uploadTicketPhoto(ticket.ticket_id, file, fileProgress);
+			}
+
+			uploadProgress = 100;
+			showUploadModal = false;
+			// Refresh ticket to show new photos
+			await fetchTicket(ticket.ticket_id);
+		} catch (e) {
+			uploadError = e instanceof Error ? e.message : 'Failed to upload photo';
+		} finally {
+			isUploading = false;
+		}
 	}
 
 	async function handlePrintReceipt() {
@@ -338,21 +428,49 @@
 
 			<!-- Photos Section -->
 			<section class="detail-section">
-				<h3 class="section-title">Photos ({ticket.photos.length})</h3>
+				<div class="section-header">
+					<h3 class="section-title">Photos ({ticket.photos.length})</h3>
+					{#if !isTicketClosed() && ticket.photos.length < 10}
+						<button class="add-photo-btn" type="button" onclick={openUploadModal}>
+							<svg
+								viewBox="0 0 16 16"
+								fill="currentColor"
+								aria-hidden="true"
+								class="add-photo-icon"
+							>
+								<path
+									d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm7.25-3.25v2.5h2.5a.75.75 0 0 1 0 1.5h-2.5v2.5a.75.75 0 0 1-1.5 0v-2.5h-2.5a.75.75 0 0 1 0-1.5h2.5v-2.5a.75.75 0 0 1 1.5 0Z"
+								/>
+							</svg>
+							Add Photo
+						</button>
+					{/if}
+				</div>
 				<div class="section-content">
 					{#if ticket.photos.length > 0}
 						<div class="photos-grid">
 							{#each ticket.photos as photo (photo.photo_id)}
-								<div class="photo-item">
+								<button
+									type="button"
+									class="photo-item"
+									onclick={() => openLightbox(photo)}
+									aria-label="View photo uploaded {formatDateTime(photo.uploaded_at)} by {photo
+										.uploaded_by.name}"
+								>
 									<img src={photo.url} alt="Ticket item" class="photo-thumbnail" />
 									<span class="photo-meta">
 										{formatDateTime(photo.uploaded_at)} by {photo.uploaded_by.name}
 									</span>
-								</div>
+								</button>
 							{/each}
 						</div>
 					{:else}
-						<p class="empty-message">No photos attached</p>
+						<div class="empty-photos">
+							<p class="empty-message">No photos attached</p>
+							{#if !isTicketClosed()}
+								<Button variant="secondary" onclick={openUploadModal}>Add Photo</Button>
+							{/if}
+						</div>
 					{/if}
 				</div>
 			</section>
@@ -563,6 +681,115 @@
 	</div>
 </Modal>
 
+<!-- Photo Lightbox -->
+{#if lightboxPhoto}
+	<div
+		class="lightbox-overlay"
+		role="dialog"
+		tabindex="-1"
+		aria-modal="true"
+		aria-label="Photo viewer"
+		onclick={closeLightbox}
+		onkeydown={handleLightboxKeydown}
+	>
+		<button
+			type="button"
+			class="lightbox-close"
+			onclick={closeLightbox}
+			aria-label="Close photo viewer"
+		>
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<line x1="18" y1="6" x2="6" y2="18" />
+				<line x1="6" y1="6" x2="18" y2="18" />
+			</svg>
+		</button>
+
+		{#if ticket && ticket.photos.length > 1}
+			<button
+				type="button"
+				class="lightbox-nav lightbox-prev"
+				onclick={(e) => {
+					e.stopPropagation();
+					navigateLightbox('prev');
+				}}
+				aria-label="Previous photo"
+			>
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<polyline points="15 18 9 12 15 6" />
+				</svg>
+			</button>
+			<button
+				type="button"
+				class="lightbox-nav lightbox-next"
+				onclick={(e) => {
+					e.stopPropagation();
+					navigateLightbox('next');
+				}}
+				aria-label="Next photo"
+			>
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<polyline points="9 18 15 12 9 6" />
+				</svg>
+			</button>
+		{/if}
+
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<div class="lightbox-content" role="presentation" onclick={(e) => e.stopPropagation()}>
+			<img src={lightboxPhoto.url} alt="Ticket item full size" class="lightbox-image" />
+			<div class="lightbox-meta">
+				<span>
+					{formatDateTime(lightboxPhoto.uploaded_at)} by {lightboxPhoto.uploaded_by.name}
+				</span>
+				{#if ticket && ticket.photos.length > 1}
+					<span class="lightbox-counter">
+						{lightboxIndex + 1} / {ticket.photos.length}
+					</span>
+				{/if}
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Upload Photo Modal -->
+<Modal open={showUploadModal} title="Add Photos" onClose={closeUploadModal}>
+	<div class="upload-photo-modal">
+		{#if uploadError}
+			<div class="upload-error-banner" role="alert">
+				<span>{uploadError}</span>
+				<button type="button" onclick={() => (uploadError = null)}>Dismiss</button>
+			</div>
+		{/if}
+
+		<PhotoUpload
+			label="Select photos to upload"
+			maxFiles={ticket ? 10 - ticket.photos.length : 10}
+			bind:files={uploadFiles}
+			disabled={isUploading}
+		/>
+
+		{#if isUploading}
+			<div class="upload-progress">
+				<div class="progress-bar">
+					<div class="progress-fill" style="width: {uploadProgress}%"></div>
+				</div>
+				<span class="progress-text">Uploading... {uploadProgress}%</span>
+			</div>
+		{/if}
+
+		<div class="upload-modal-actions">
+			<Button variant="secondary" onclick={closeUploadModal} disabled={isUploading}>Cancel</Button>
+			<Button
+				variant="primary"
+				onclick={handleUploadPhotos}
+				disabled={uploadFiles.length === 0}
+				loading={isUploading}
+			>
+				Upload {uploadFiles.length > 0 ? `(${uploadFiles.length})` : ''}
+			</Button>
+		</div>
+	</div>
+</Modal>
+
 <style>
 	.ticket-detail-content {
 		width: 600px;
@@ -749,6 +976,45 @@
 		opacity: 1;
 	}
 
+	/* Section header with title and action */
+	.section-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: var(--space-sm, 0.5rem);
+	}
+
+	.section-header .section-title {
+		margin-bottom: 0;
+	}
+
+	.add-photo-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-xs, 0.25rem);
+		padding: var(--space-xs, 0.25rem) var(--space-sm, 0.5rem);
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--color-primary, #1e40af);
+		background: none;
+		border: 1px solid var(--color-primary, #1e40af);
+		border-radius: var(--radius-md, 0.5rem);
+		cursor: pointer;
+		transition:
+			background-color var(--transition-fast, 150ms ease),
+			color var(--transition-fast, 150ms ease);
+	}
+
+	.add-photo-btn:hover {
+		background-color: var(--color-primary, #1e40af);
+		color: white;
+	}
+
+	.add-photo-icon {
+		width: 14px;
+		height: 14px;
+	}
+
 	/* Photos */
 	.photos-grid {
 		display: grid;
@@ -760,6 +1026,17 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-xs, 0.25rem);
+		padding: 0;
+		background: none;
+		border: none;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.photo-item:focus-visible {
+		outline: 2px solid var(--color-primary, #1e40af);
+		outline-offset: 2px;
+		border-radius: var(--radius-md, 0.5rem);
 	}
 
 	.photo-thumbnail {
@@ -767,12 +1044,19 @@
 		aspect-ratio: 1;
 		object-fit: cover;
 		border-radius: var(--radius-md, 0.5rem);
-		cursor: pointer;
 		transition: transform var(--transition-fast, 150ms ease);
 	}
 
-	.photo-thumbnail:hover {
+	.photo-item:hover .photo-thumbnail {
 		transform: scale(1.02);
+	}
+
+	.empty-photos {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: var(--space-md, 1rem);
+		padding: var(--space-md, 1rem);
 	}
 
 	.photo-meta {
@@ -876,6 +1160,173 @@
 	}
 
 	.close-modal-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: var(--space-sm, 0.5rem);
+		margin-top: var(--space-lg, 1.5rem);
+	}
+
+	/* Lightbox */
+	.lightbox-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 1000;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background-color: rgba(0, 0, 0, 0.9);
+		padding: var(--space-xl, 2rem);
+	}
+
+	.lightbox-close {
+		position: absolute;
+		top: var(--space-md, 1rem);
+		right: var(--space-md, 1rem);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 2.5rem;
+		height: 2.5rem;
+		padding: 0;
+		background: rgba(255, 255, 255, 0.1);
+		border: none;
+		border-radius: 50%;
+		color: white;
+		cursor: pointer;
+		transition: background-color var(--transition-fast, 150ms ease);
+	}
+
+	.lightbox-close:hover {
+		background: rgba(255, 255, 255, 0.2);
+	}
+
+	.lightbox-close svg {
+		width: 1.25rem;
+		height: 1.25rem;
+	}
+
+	.lightbox-nav {
+		position: absolute;
+		top: 50%;
+		transform: translateY(-50%);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 3rem;
+		height: 3rem;
+		padding: 0;
+		background: rgba(255, 255, 255, 0.1);
+		border: none;
+		border-radius: 50%;
+		color: white;
+		cursor: pointer;
+		transition: background-color var(--transition-fast, 150ms ease);
+	}
+
+	.lightbox-nav:hover {
+		background: rgba(255, 255, 255, 0.2);
+	}
+
+	.lightbox-nav svg {
+		width: 1.5rem;
+		height: 1.5rem;
+	}
+
+	.lightbox-prev {
+		left: var(--space-md, 1rem);
+	}
+
+	.lightbox-next {
+		right: var(--space-md, 1rem);
+	}
+
+	.lightbox-content {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		max-width: 90vw;
+		max-height: 90vh;
+	}
+
+	.lightbox-image {
+		max-width: 100%;
+		max-height: calc(90vh - 3rem);
+		object-fit: contain;
+		border-radius: var(--radius-md, 0.5rem);
+	}
+
+	.lightbox-meta {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		width: 100%;
+		margin-top: var(--space-sm, 0.5rem);
+		padding: var(--space-sm, 0.5rem);
+		color: rgba(255, 255, 255, 0.8);
+		font-size: 0.875rem;
+	}
+
+	.lightbox-counter {
+		font-weight: 500;
+	}
+
+	/* Upload photo modal */
+	.upload-photo-modal {
+		width: 400px;
+		max-width: 90vw;
+	}
+
+	.upload-error-banner {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-sm, 0.5rem);
+		padding: var(--space-sm, 0.5rem) var(--space-md, 1rem);
+		margin-bottom: var(--space-md, 1rem);
+		background-color: var(--color-error-bg, #fef2f2);
+		border: 1px solid var(--color-error-border, #fecaca);
+		border-radius: var(--radius-md, 0.5rem);
+		font-size: 0.875rem;
+		color: var(--color-rush, #ef4444);
+	}
+
+	.upload-error-banner button {
+		padding: var(--space-xs, 0.25rem) var(--space-sm, 0.5rem);
+		font-size: 0.75rem;
+		color: var(--color-rush, #ef4444);
+		background: none;
+		border: 1px solid var(--color-rush, #ef4444);
+		border-radius: var(--radius-sm, 0.25rem);
+		cursor: pointer;
+	}
+
+	.upload-progress {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-xs, 0.25rem);
+		margin-top: var(--space-md, 1rem);
+	}
+
+	.progress-bar {
+		height: 8px;
+		background-color: var(--color-border, #e2e8f0);
+		border-radius: 4px;
+		overflow: hidden;
+	}
+
+	.progress-fill {
+		height: 100%;
+		background-color: var(--color-primary, #1e40af);
+		transition: width 150ms ease;
+	}
+
+	.progress-text {
+		font-size: 0.75rem;
+		color: var(--color-text-muted, #64748b);
+		text-align: center;
+	}
+
+	.upload-modal-actions {
 		display: flex;
 		justify-content: flex-end;
 		gap: var(--space-sm, 0.5rem);

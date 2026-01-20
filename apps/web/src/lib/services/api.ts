@@ -475,6 +475,102 @@ export async function getStoreSettings(): Promise<StoreSettings> {
 }
 
 // =============================================================================
+// Photo Upload
+// =============================================================================
+
+/**
+ * Response from uploading a photo to a ticket.
+ */
+export interface UploadPhotoResponse {
+	photo_id: string;
+	ticket_id: string;
+	storage_key: string;
+	content_type: string;
+	size_bytes: number;
+	uploaded_at: string;
+	uploaded_by: string;
+	url: string;
+}
+
+/**
+ * Upload a photo to a ticket.
+ * Uses multipart/form-data with a field named "photo".
+ * Returns progress via the onProgress callback.
+ */
+export async function uploadTicketPhoto(
+	ticketId: string,
+	file: File,
+	onProgress?: (progress: number) => void
+): Promise<UploadPhotoResponse> {
+	const url = buildUrl(`/tickets/${ticketId}/photos`);
+
+	const formData = new FormData();
+	formData.append('photo', file);
+
+	return new Promise((resolve, reject) => {
+		const xhr = new XMLHttpRequest();
+
+		xhr.upload.addEventListener('progress', (event) => {
+			if (event.lengthComputable && onProgress) {
+				const progress = Math.round((event.loaded / event.total) * 100);
+				onProgress(progress);
+			}
+		});
+
+		xhr.addEventListener('load', () => {
+			if (xhr.status >= 200 && xhr.status < 300) {
+				try {
+					const response = JSON.parse(xhr.responseText);
+					if (response.error) {
+						reject(new ApiClientError(response.error.code, response.error.message, xhr.status));
+					} else {
+						resolve(response.data);
+					}
+				} catch {
+					reject(new ApiClientError('SERVER_ERROR', 'Failed to parse response', xhr.status));
+				}
+			} else {
+				try {
+					const response = JSON.parse(xhr.responseText);
+					if (response.error) {
+						reject(new ApiClientError(response.error.code, response.error.message, xhr.status));
+					} else {
+						reject(
+							new ApiClientError(
+								'SERVER_ERROR',
+								`Request failed with status ${xhr.status}`,
+								xhr.status
+							)
+						);
+					}
+				} catch {
+					reject(
+						new ApiClientError(
+							'SERVER_ERROR',
+							`Request failed with status ${xhr.status}`,
+							xhr.status
+						)
+					);
+				}
+			}
+		});
+
+		xhr.addEventListener('error', () => {
+			reject(new ApiClientError('SERVER_ERROR', 'Network error', 0));
+		});
+
+		xhr.open('POST', url);
+
+		// Add headers
+		if (currentEmployeeId) {
+			xhr.setRequestHeader('X-Employee-ID', currentEmployeeId);
+		}
+
+		xhr.send(formData);
+	});
+}
+
+// =============================================================================
 // Re-exports for convenience
 // =============================================================================
 
