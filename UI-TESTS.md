@@ -2669,3 +2669,71 @@ Arcane theme CSS variables (`apps/web/src/lib/themes/arcane.css`):
 - Both themes now confirmed working with proper persistence
 - Arcane theme provides a distinct fantasy/pixel aesthetic with darker color palette
 - Pixel fonts ('Press Start 2P') load from Google Fonts for heading elements
+
+---
+
+## TEST: facet-5f4 - Employee list displays correctly
+**Date:** 2026-01-20
+**Status:** BLOCKED (Authentication Required)
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/admin
+2. Located the Employees section on the admin page
+3. Verified section header "Employees" is present (h2 level heading)
+4. Observed "No employees configured yet." message displayed
+5. Investigated API behavior: `/api/v1/employees` returns 401 error "Missing X-Admin-PIN header"
+6. Verified database has 2 employees: both named "Admin" with role "admin", both active
+7. Confirmed API works correctly when X-Admin-PIN header is provided (tested with "changeme")
+8. Reviewed page server loader code: fetches from `/api/v1/employees` without auth header
+
+### Success Criteria Results
+- [x] Employee list section is present with header - PASS - Section with h2 "Employees" heading present
+- [ ] All employees from database are listed - BLOCKED - API requires admin PIN authentication, page doesn't send it
+- [ ] Each entry shows employee name - BLOCKED - No entries displayed due to auth failure
+- [ ] Each entry shows role badge (admin/staff) - BLOCKED - No entries displayed due to auth failure
+- [ ] Role badges are color-coded appropriately - BLOCKED - Cannot verify, no entries displayed
+- [ ] Inactive employees show "Inactive" badge (if any) - BLOCKED - Cannot verify (no inactive employees exist anyway)
+
+### Technical Details
+Frontend implementation (`apps/web/src/routes/admin/+page.svelte`):
+- Employee list section present with proper markup
+- Template ready to display employees with: name, role badge, inactive badge
+- CSS styling exists for role badges: `.role-admin` (primary color), `.role-staff` (muted color)
+- Inactive badge styling: `.employee-inactive` (red background)
+
+Page loader (`apps/web/src/routes/admin/+page.server.ts`):
+- Fetches `/api/v1/employees` without authentication header
+- Returns empty array when API fails (graceful degradation)
+- No error shown to user (returns `error: null`)
+
+API endpoint (`apps/api/src/handlers/employees.rs`):
+- `list_employees()` requires `X-Admin-PIN` header for authorization
+- Returns employees list only after admin PIN verification
+- API correctly returns data when authenticated
+
+Database state:
+```
+employee_id                          | name  | role  | is_active 
+-------------------------------------+-------+-------+-----------
+4f99e1de-b08c-4fb3-b086-90c36b0a2a9a | Admin | admin | t
+a02a8960-c23f-495b-9962-c75545e40c5c | Admin | admin | t
+```
+
+### Screenshots
+- None captured (UI shows only placeholder text)
+
+### Issues Found
+- **HIGH**: Admin page cannot display employee list because API authentication is not implemented in frontend
+  - API correctly requires `X-Admin-PIN` header for security
+  - Frontend loader doesn't send authentication header
+  - User sees "No employees configured yet." even when employees exist
+  - Suggested fix: Implement admin authentication flow (login/session) to securely pass admin PIN to API calls
+
+### Notes
+- This is expected behavior given the current implementation state
+- The employee list UI components (template, styling) are fully implemented and ready
+- The blocker is the authentication flow between frontend and backend
+- Once admin authentication is implemented, the employee list should display correctly
+- Test passes for "UI components exist" but blocks on "data displays correctly"
+- Fallback message "No employees configured yet." may be misleading when employees exist but auth fails
