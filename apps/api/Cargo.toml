@@ -27,6 +27,9 @@ aws-credential-types = "1"
 # PDF generation
 printpdf = "0.7"
 
+# Password hashing
+argon2 = "0.5"
+
 [dev-dependencies]
 http-body-util = "0.1"
 serde_urlencoded = "0.7"

@@ -2,6 +2,7 @@
 //!
 //! This crate provides the REST API for the Facet application.
 
+pub mod auth;
 pub mod config;
 pub mod db;
 pub mod error;
