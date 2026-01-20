@@ -1761,3 +1761,73 @@ The validation implementation in IntakeFormModal.svelte:
 - Error styling includes red text and red input borders (good visual distinction)
 - The dual validation system (native HTML5 + custom) works correctly but validation only on submit is suboptimal UX
 - Recommendation: Add blur validation for required fields and clear errors immediately when field becomes valid
+
+---
+
+## TEST: facet-w84 - Close Ticket Amount Validation
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/search
+2. Filtered by "Ready for Pickup" status
+3. Found ticket JR-0003 in Ready for Pickup status
+4. Clicked on ticket to open TicketDetailModal
+5. Clicked "Close Ticket" button to open the Close Ticket modal
+6. Left amount field empty and clicked "Next" - observed native HTML5 validation
+7. Attempted to enter "abc" (non-numeric) - browser blocked input (type="number")
+8. Entered "-50" (negative number) and clicked "Next" - observed custom validation error
+9. Entered "150.00" (valid amount) and clicked "Next" - advanced to Step 2 (PIN)
+10. Closed modal without completing the close flow (preserving test ticket)
+
+### Success Criteria Results
+- [x] Empty amount shows validation error - PASS
+  - Native HTML5 validation displays "Please fill out this field." tooltip
+  - Form submission is blocked, cannot proceed to Step 2
+- [x] Non-numeric value shows validation error - PASS (by design)
+  - Input type="number" prevents entry of non-numeric characters at browser level
+  - Letters like "abc" are not accepted into the field
+- [x] Negative number shows validation error - PASS
+  - Custom validation displays "Please enter a valid amount"
+  - Error appears in red text below the input field
+  - Form submission is blocked, cannot proceed to Step 2
+- [x] Cannot proceed to Step 2 without valid amount - PASS
+  - All invalid inputs (empty, negative) block advancement
+  - User must provide a valid positive number to continue
+- [x] Valid amount (e.g., "150.00") allows proceeding - PASS
+  - Successfully advanced to Step 2 (Employee PIN verification)
+- [x] Error messages are clear and specific - PASS
+  - Empty: "Please fill out this field." (native HTML5)
+  - Negative: "Please enter a valid amount" (custom)
+
+### Screenshots
+- .playwright-mcp/close-ticket-empty-validation.png - Native validation on empty submit
+- .playwright-mcp/close-ticket-negative-validation.png - Custom error for negative amount
+- .playwright-mcp/close-ticket-step2-pin.png - Successfully advanced to Step 2 with valid amount
+
+### Issues Found
+None - All validation works correctly.
+
+### Code Analysis
+The validation is implemented in TicketDetailModal.svelte in the `handleAmountSubmit()` function:
+- Line 288-291: Checks for empty string, sets error "Please enter the actual amount charged"
+- Line 294-298: Validates number is not NaN and not negative, sets error "Please enter a valid amount"
+- The Input component has `type="number"` which provides browser-level protection against non-numeric input
+- The Input component has `required` attribute which triggers native HTML5 validation
+- Both native and custom validation work together for comprehensive protection
+
+### Validation Flow Summary
+| Input | Native HTML5 | Custom Validation | Result |
+|-------|--------------|-------------------|--------|
+| Empty | "Please fill out this field." | Not reached | BLOCKED |
+| "abc" | N/A (browser prevents entry) | N/A | BLOCKED |
+| "-50" | Valid (is a number) | "Please enter a valid amount" | BLOCKED |
+| "150.00" | Valid | Valid (≥0) | PROCEEDS |
+
+### Notes
+- The dual validation approach (native + custom) is a robust pattern
+- Native HTML5 validation triggers first, catching empty values
+- Custom validation handles edge cases like negative amounts
+- The validation error styling is consistent with other forms in the application
+- Close ticket flow properly requires valid amount before employee PIN step
