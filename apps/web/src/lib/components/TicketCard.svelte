@@ -12,6 +12,10 @@
 		onclick?: () => void;
 		/** Whether the card is currently being dragged */
 		isDragging?: boolean;
+		/** Callback when drag starts */
+		ondragstart?: (ticketId: string) => void;
+		/** Callback when drag ends */
+		ondragend?: () => void;
 		/** Additional CSS class for the card */
 		class?: string;
 	}
@@ -21,8 +25,22 @@
 		thumbnailUrl = null,
 		onclick,
 		isDragging = false,
+		ondragstart,
+		ondragend,
 		class: className = ''
 	}: Props = $props();
+
+	function handleDragStart(event: DragEvent) {
+		if (event.dataTransfer) {
+			event.dataTransfer.setData('text/plain', ticket.ticket_id);
+			event.dataTransfer.effectAllowed = 'move';
+		}
+		ondragstart?.(ticket.ticket_id);
+	}
+
+	function handleDragEnd() {
+		ondragend?.();
+	}
 
 	/** Format promise date for display */
 	function formatPromiseDate(dateString: string | null): string {
@@ -47,6 +65,9 @@
 	class:is-dragging={isDragging}
 	draggable="true"
 	data-ticket-id={ticket.ticket_id}
+	ondragstart={handleDragStart}
+	ondragend={handleDragEnd}
+	role="listitem"
 >
 	<Card clickable padding="sm" shadow="sm" {onclick}>
 		<div class="ticket-card-content">

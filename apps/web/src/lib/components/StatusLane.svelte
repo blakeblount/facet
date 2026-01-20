@@ -13,6 +13,12 @@
 		isDropTarget?: boolean;
 		/** Whether an item is being dragged over this lane */
 		isDragOver?: boolean;
+		/** Callback when dragenter event fires */
+		ondragenter?: () => void;
+		/** Callback when dragleave event fires */
+		ondragleave?: () => void;
+		/** Callback when drop event fires with ticket ID */
+		ondrop?: (ticketId: string) => void;
 		/** Additional CSS class for the lane */
 		class?: string;
 		/** Lane card content (slot for ticket cards) */
@@ -25,9 +31,42 @@
 		count,
 		isDropTarget = false,
 		isDragOver = false,
+		ondragenter,
+		ondragleave,
+		ondrop,
 		class: className = '',
 		children
 	}: Props = $props();
+
+	function handleDragOver(event: DragEvent) {
+		// Prevent default to allow drop
+		event.preventDefault();
+		if (event.dataTransfer) {
+			event.dataTransfer.dropEffect = 'move';
+		}
+	}
+
+	function handleDragEnter(event: DragEvent) {
+		event.preventDefault();
+		ondragenter?.();
+	}
+
+	function handleDragLeave(event: DragEvent) {
+		// Only trigger if leaving the lane itself, not a child element
+		const relatedTarget = event.relatedTarget as HTMLElement | null;
+		const currentTarget = event.currentTarget as HTMLElement;
+		if (!relatedTarget || !currentTarget.contains(relatedTarget)) {
+			ondragleave?.();
+		}
+	}
+
+	function handleDrop(event: DragEvent) {
+		event.preventDefault();
+		const ticketId = event.dataTransfer?.getData('text/plain');
+		if (ticketId) {
+			ondrop?.(ticketId);
+		}
+	}
 
 	/** Map status to display label */
 	const statusLabels: Record<TicketStatus, string> = {
@@ -58,6 +97,12 @@
 	class:is-drop-target={isDropTarget}
 	class:is-drag-over={isDragOver}
 	data-status={status}
+	ondragover={handleDragOver}
+	ondragenter={handleDragEnter}
+	ondragleave={handleDragLeave}
+	ondrop={handleDrop}
+	role="list"
+	aria-label="{displayLabel} lane"
 >
 	<header class="lane-header">
 		<h3 class="lane-title">{displayLabel}</h3>

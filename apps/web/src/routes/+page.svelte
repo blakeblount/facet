@@ -1,13 +1,182 @@
 <script lang="ts">
+	import { SvelteMap } from 'svelte/reactivity';
 	import type { PageData } from './$types';
 	import { resolve } from '$app/paths';
+	import { invalidateAll } from '$app/navigation';
 	import Button from '$lib/components/Button.svelte';
+	import StatusLane from '$lib/components/StatusLane.svelte';
+	import TicketCard from '$lib/components/TicketCard.svelte';
+	import EmployeeIdModal from '$lib/components/EmployeeIdModal.svelte';
+	import {
+		changeTicketStatus,
+		setCurrentEmployee,
+		type TicketStatus,
+		type QueueTicket,
+		type VerifyPinResponse
+	} from '$lib/services/api';
 
 	let { data }: { data: PageData } = $props();
+
+	// Drag state
+	let draggingTicketId = $state<string | null>(null);
+	let dragOverLane = $state<TicketStatus | null>(null);
+
+	// Modal state for PIN verification before status change
+	let showPinModal = $state(false);
+	let pendingStatusChange = $state<{
+		ticketId: string;
+		newStatus: TicketStatus;
+		sourceStatus: TicketStatus;
+	} | null>(null);
+	let statusUpdateError = $state<string | null>(null);
+
+	// Local optimistic state - tracks tickets moved before API confirms
+	const optimisticMoves = new SvelteMap<
+		string,
+		{ fromStatus: TicketStatus; toStatus: TicketStatus }
+	>();
+
+	// Computed lanes that apply optimistic moves
+	const lanes = $derived.by(() => {
+		if (!data.queue) return null;
+
+		// Deep clone the lanes
+		const result = {
+			intake: { count: 0, tickets: [...data.queue.lanes.intake.tickets] },
+			in_progress: { count: 0, tickets: [...data.queue.lanes.in_progress.tickets] },
+			waiting_on_parts: { count: 0, tickets: [...data.queue.lanes.waiting_on_parts.tickets] },
+			ready_for_pickup: { count: 0, tickets: [...data.queue.lanes.ready_for_pickup.tickets] }
+		};
+
+		// Apply optimistic moves
+		for (const [ticketId, move] of optimisticMoves) {
+			// Remove from source
+			const sourceLane = result[move.fromStatus as keyof typeof result];
+			if (sourceLane) {
+				const idx = sourceLane.tickets.findIndex((t) => t.ticket_id === ticketId);
+				if (idx !== -1) {
+					const [ticket] = sourceLane.tickets.splice(idx, 1);
+					// Add to destination
+					const destLane = result[move.toStatus as keyof typeof result];
+					if (destLane && ticket) {
+						// Update ticket status
+						const movedTicket = { ...ticket, status: move.toStatus };
+						destLane.tickets.unshift(movedTicket);
+					}
+				}
+			}
+		}
+
+		// Update counts
+		result.intake.count = result.intake.tickets.length;
+		result.in_progress.count = result.in_progress.tickets.length;
+		result.waiting_on_parts.count = result.waiting_on_parts.tickets.length;
+		result.ready_for_pickup.count = result.ready_for_pickup.tickets.length;
+
+		return result;
+	});
 
 	function handleNewTicket() {
 		// TODO: Open intake form modal when implemented
 		console.log('New ticket clicked');
+	}
+
+	function handleDragStart(ticketId: string) {
+		draggingTicketId = ticketId;
+	}
+
+	function handleDragEnd() {
+		draggingTicketId = null;
+		dragOverLane = null;
+	}
+
+	function handleDragEnter(status: TicketStatus) {
+		dragOverLane = status;
+	}
+
+	function handleDragLeave(status: TicketStatus) {
+		if (dragOverLane === status) {
+			dragOverLane = null;
+		}
+	}
+
+	function findTicketStatus(ticketId: string): TicketStatus | null {
+		if (!data.queue) return null;
+		const laneEntries = Object.entries(data.queue.lanes) as [
+			TicketStatus,
+			{ tickets: QueueTicket[] }
+		][];
+		for (const [status, lane] of laneEntries) {
+			if (lane.tickets.some((t) => t.ticket_id === ticketId)) {
+				return status;
+			}
+		}
+		return null;
+	}
+
+	function handleDrop(ticketId: string, targetStatus: TicketStatus) {
+		const sourceStatus = findTicketStatus(ticketId);
+		if (!sourceStatus || sourceStatus === targetStatus) {
+			handleDragEnd();
+			return;
+		}
+
+		// Store the pending change and show PIN modal
+		pendingStatusChange = {
+			ticketId,
+			newStatus: targetStatus,
+			sourceStatus
+		};
+		statusUpdateError = null;
+		showPinModal = true;
+		handleDragEnd();
+	}
+
+	async function handlePinSuccess(employee: VerifyPinResponse) {
+		if (!pendingStatusChange) return;
+
+		const { ticketId, newStatus, sourceStatus } = pendingStatusChange;
+
+		// Set the current employee for the API call
+		setCurrentEmployee(employee.employee_id);
+
+		// Apply optimistic update
+		optimisticMoves.set(ticketId, { fromStatus: sourceStatus, toStatus: newStatus });
+
+		// Close modal immediately for better UX
+		showPinModal = false;
+		const savedPendingChange = pendingStatusChange;
+		pendingStatusChange = null;
+
+		try {
+			await changeTicketStatus(ticketId, newStatus);
+			// Success - refresh data from server
+			await invalidateAll();
+		} catch (err) {
+			// Revert optimistic update
+			console.error('Failed to update ticket status:', err);
+			statusUpdateError =
+				err instanceof Error ? err.message : 'Failed to update status. Please try again.';
+			// Re-show the modal with error? Or show toast?
+			// For now, just revert
+		} finally {
+			// Clear optimistic move
+			optimisticMoves.delete(savedPendingChange.ticketId);
+		}
+	}
+
+	function handlePinModalClose() {
+		showPinModal = false;
+		pendingStatusChange = null;
+	}
+
+	function navigateToTicket(ticketId: string) {
+		window.location.href = resolve('/tickets/[id]', { id: ticketId });
+	}
+
+	// Helper to determine if lane is a valid drop target
+	function isValidDropTarget(status: TicketStatus): boolean {
+		return draggingTicketId !== null && findTicketStatus(draggingTicketId) !== status;
 	}
 </script>
 
@@ -23,117 +192,126 @@
 		<div class="error-message">
 			<p>Failed to load queue: {data.error}</p>
 		</div>
-	{:else if data.queue}
+	{:else if lanes}
+		{#if statusUpdateError}
+			<div class="error-message error-toast">
+				<p>{statusUpdateError}</p>
+				<button onclick={() => (statusUpdateError = null)}>Dismiss</button>
+			</div>
+		{/if}
+
 		<div class="lanes-container">
-			<div class="lane">
-				<div class="lane-header lane-header-intake">
-					<div class="lane-header-left">
-						<h2 class="lane-title">Intake</h2>
-						<span class="lane-count">{data.queue.lanes.intake.count}</span>
+			<!-- Intake Lane with + New button -->
+			<div class="lane-wrapper">
+				<StatusLane
+					status="intake"
+					count={lanes.intake.count}
+					isDropTarget={isValidDropTarget('intake')}
+					isDragOver={dragOverLane === 'intake'}
+					ondragenter={() => handleDragEnter('intake')}
+					ondragleave={() => handleDragLeave('intake')}
+					ondrop={(ticketId) => handleDrop(ticketId, 'intake')}
+				>
+					<div class="lane-header-action">
+						<Button variant="secondary" size="sm" onclick={handleNewTicket} class="new-ticket-btn">
+							+ New
+						</Button>
 					</div>
-					<Button variant="secondary" size="sm" onclick={handleNewTicket} class="new-ticket-btn">
-						+ New
-					</Button>
-				</div>
-				<div class="lane-content">
-					{#each data.queue.lanes.intake.tickets as ticket (ticket.ticket_id)}
-						<a
-							href={resolve('/tickets/[id]', { id: ticket.ticket_id })}
-							class="ticket-card"
-							class:is-rush={ticket.is_rush}
-						>
-							<div class="ticket-code">{ticket.friendly_code}</div>
-							<div class="ticket-customer">{ticket.customer_name}</div>
-							<div class="ticket-description">{ticket.item_description}</div>
-							{#if ticket.is_rush}
-								<span class="rush-badge">RUSH</span>
-							{/if}
-						</a>
+					{#each lanes.intake.tickets as ticket (ticket.ticket_id)}
+						<TicketCard
+							{ticket}
+							isDragging={draggingTicketId === ticket.ticket_id}
+							ondragstart={handleDragStart}
+							ondragend={handleDragEnd}
+							onclick={() => navigateToTicket(ticket.ticket_id)}
+						/>
 					{:else}
-						<p class="lane-empty">No tickets</p>
+						<p class="lane-empty-message">No tickets</p>
 					{/each}
-				</div>
+				</StatusLane>
 			</div>
 
-			<div class="lane">
-				<div class="lane-header lane-header-in-progress">
-					<h2 class="lane-title">In Progress</h2>
-					<span class="lane-count">{data.queue.lanes.in_progress.count}</span>
-				</div>
-				<div class="lane-content">
-					{#each data.queue.lanes.in_progress.tickets as ticket (ticket.ticket_id)}
-						<a
-							href={resolve('/tickets/[id]', { id: ticket.ticket_id })}
-							class="ticket-card"
-							class:is-rush={ticket.is_rush}
-						>
-							<div class="ticket-code">{ticket.friendly_code}</div>
-							<div class="ticket-customer">{ticket.customer_name}</div>
-							<div class="ticket-description">{ticket.item_description}</div>
-							{#if ticket.is_rush}
-								<span class="rush-badge">RUSH</span>
-							{/if}
-						</a>
-					{:else}
-						<p class="lane-empty">No tickets</p>
-					{/each}
-				</div>
-			</div>
+			<!-- In Progress Lane -->
+			<StatusLane
+				status="in_progress"
+				count={lanes.in_progress.count}
+				isDropTarget={isValidDropTarget('in_progress')}
+				isDragOver={dragOverLane === 'in_progress'}
+				ondragenter={() => handleDragEnter('in_progress')}
+				ondragleave={() => handleDragLeave('in_progress')}
+				ondrop={(ticketId) => handleDrop(ticketId, 'in_progress')}
+			>
+				{#each lanes.in_progress.tickets as ticket (ticket.ticket_id)}
+					<TicketCard
+						{ticket}
+						isDragging={draggingTicketId === ticket.ticket_id}
+						ondragstart={handleDragStart}
+						ondragend={handleDragEnd}
+						onclick={() => navigateToTicket(ticket.ticket_id)}
+					/>
+				{:else}
+					<p class="lane-empty-message">No tickets</p>
+				{/each}
+			</StatusLane>
 
-			<div class="lane">
-				<div class="lane-header lane-header-waiting">
-					<h2 class="lane-title">Waiting on Parts</h2>
-					<span class="lane-count">{data.queue.lanes.waiting_on_parts.count}</span>
-				</div>
-				<div class="lane-content">
-					{#each data.queue.lanes.waiting_on_parts.tickets as ticket (ticket.ticket_id)}
-						<a
-							href={resolve('/tickets/[id]', { id: ticket.ticket_id })}
-							class="ticket-card"
-							class:is-rush={ticket.is_rush}
-						>
-							<div class="ticket-code">{ticket.friendly_code}</div>
-							<div class="ticket-customer">{ticket.customer_name}</div>
-							<div class="ticket-description">{ticket.item_description}</div>
-							{#if ticket.is_rush}
-								<span class="rush-badge">RUSH</span>
-							{/if}
-						</a>
-					{:else}
-						<p class="lane-empty">No tickets</p>
-					{/each}
-				</div>
-			</div>
+			<!-- Waiting on Parts Lane -->
+			<StatusLane
+				status="waiting_on_parts"
+				count={lanes.waiting_on_parts.count}
+				isDropTarget={isValidDropTarget('waiting_on_parts')}
+				isDragOver={dragOverLane === 'waiting_on_parts'}
+				ondragenter={() => handleDragEnter('waiting_on_parts')}
+				ondragleave={() => handleDragLeave('waiting_on_parts')}
+				ondrop={(ticketId) => handleDrop(ticketId, 'waiting_on_parts')}
+			>
+				{#each lanes.waiting_on_parts.tickets as ticket (ticket.ticket_id)}
+					<TicketCard
+						{ticket}
+						isDragging={draggingTicketId === ticket.ticket_id}
+						ondragstart={handleDragStart}
+						ondragend={handleDragEnd}
+						onclick={() => navigateToTicket(ticket.ticket_id)}
+					/>
+				{:else}
+					<p class="lane-empty-message">No tickets</p>
+				{/each}
+			</StatusLane>
 
-			<div class="lane">
-				<div class="lane-header lane-header-ready">
-					<h2 class="lane-title">Ready for Pickup</h2>
-					<span class="lane-count">{data.queue.lanes.ready_for_pickup.count}</span>
-				</div>
-				<div class="lane-content">
-					{#each data.queue.lanes.ready_for_pickup.tickets as ticket (ticket.ticket_id)}
-						<a
-							href={resolve('/tickets/[id]', { id: ticket.ticket_id })}
-							class="ticket-card"
-							class:is-rush={ticket.is_rush}
-						>
-							<div class="ticket-code">{ticket.friendly_code}</div>
-							<div class="ticket-customer">{ticket.customer_name}</div>
-							<div class="ticket-description">{ticket.item_description}</div>
-							{#if ticket.is_rush}
-								<span class="rush-badge">RUSH</span>
-							{/if}
-						</a>
-					{:else}
-						<p class="lane-empty">No tickets</p>
-					{/each}
-				</div>
-			</div>
+			<!-- Ready for Pickup Lane -->
+			<StatusLane
+				status="ready_for_pickup"
+				count={lanes.ready_for_pickup.count}
+				isDropTarget={isValidDropTarget('ready_for_pickup')}
+				isDragOver={dragOverLane === 'ready_for_pickup'}
+				ondragenter={() => handleDragEnter('ready_for_pickup')}
+				ondragleave={() => handleDragLeave('ready_for_pickup')}
+				ondrop={(ticketId) => handleDrop(ticketId, 'ready_for_pickup')}
+			>
+				{#each lanes.ready_for_pickup.tickets as ticket (ticket.ticket_id)}
+					<TicketCard
+						{ticket}
+						isDragging={draggingTicketId === ticket.ticket_id}
+						ondragstart={handleDragStart}
+						ondragend={handleDragEnd}
+						onclick={() => navigateToTicket(ticket.ticket_id)}
+					/>
+				{:else}
+					<p class="lane-empty-message">No tickets</p>
+				{/each}
+			</StatusLane>
 		</div>
 	{:else}
 		<div class="loading">Loading workboard...</div>
 	{/if}
 </div>
+
+<!-- Employee PIN Modal for status changes -->
+<EmployeeIdModal
+	open={showPinModal}
+	title="Verify Employee PIN"
+	onClose={handlePinModalClose}
+	onSuccess={handlePinSuccess}
+/>
 
 <style>
 	.workboard {
@@ -162,6 +340,27 @@
 		border: 1px solid #fecaca;
 		border-radius: var(--radius-md);
 		color: #991b1b;
+	}
+
+	.error-toast {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-md);
+	}
+
+	.error-toast button {
+		background: none;
+		border: 1px solid currentColor;
+		border-radius: var(--radius-sm);
+		padding: var(--space-xs) var(--space-sm);
+		color: inherit;
+		cursor: pointer;
+		font-size: 0.875rem;
+	}
+
+	.error-toast button:hover {
+		background-color: rgba(153, 27, 27, 0.1);
 	}
 
 	.loading {
@@ -194,147 +393,32 @@
 		border-radius: 4px;
 	}
 
-	.lane {
+	.lane-wrapper {
+		display: contents;
+	}
+
+	.lane-header-action {
 		display: flex;
-		flex-direction: column;
-		flex: 1 0 280px;
-		min-width: 280px;
-		max-width: 360px;
-		background-color: var(--color-bg-card);
-		border-radius: var(--radius-lg);
-		box-shadow: var(--shadow-sm);
-		overflow: hidden;
+		justify-content: flex-end;
+		padding-bottom: var(--space-sm);
 	}
 
-	.lane-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: var(--space-sm) var(--space-md);
-		color: white;
-		gap: var(--space-sm);
-		min-height: 3rem;
-	}
-
-	.lane-header-left {
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm);
-	}
-
-	/* New ticket button styling for contrast on colored header */
-	.lane-header :global(.new-ticket-btn) {
-		background-color: rgba(255, 255, 255, 0.95);
-		color: var(--color-intake);
-		border-color: transparent;
-		font-weight: 600;
-	}
-
-	.lane-header :global(.new-ticket-btn:hover) {
-		background-color: white;
-	}
-
-	.lane-header-intake {
-		background-color: var(--color-intake);
-	}
-
-	.lane-header-in-progress {
-		background-color: var(--color-in-progress);
-	}
-
-	.lane-header-waiting {
-		background-color: var(--color-waiting);
-	}
-
-	.lane-header-ready {
-		background-color: var(--color-ready);
-	}
-
-	.lane-title {
-		font-size: 1rem;
-		font-weight: 600;
-	}
-
-	.lane-count {
-		background-color: rgba(255, 255, 255, 0.2);
-		padding: var(--space-xs) var(--space-sm);
-		border-radius: var(--radius-sm);
-		font-size: 0.875rem;
-		font-weight: 600;
-	}
-
-	.lane-content {
-		flex: 1;
-		padding: var(--space-sm);
-		overflow-y: auto;
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-sm);
-	}
-
-	.lane-empty {
+	.lane-empty-message {
 		padding: var(--space-md);
 		text-align: center;
 		color: var(--color-text-muted);
 		font-size: 0.875rem;
+		font-style: italic;
 	}
 
-	.ticket-card {
-		position: relative;
-		display: block;
-		padding: var(--space-md);
-		background-color: var(--color-bg);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-md);
-		color: var(--color-text);
-		text-decoration: none;
-		transition:
-			box-shadow var(--transition-fast),
-			transform var(--transition-fast);
-	}
-
-	.ticket-card:hover {
-		box-shadow: var(--shadow-md);
-		transform: translateY(-1px);
-		text-decoration: none;
-	}
-
-	.ticket-card.is-rush {
-		border-left: 4px solid var(--color-rush);
-	}
-
-	.ticket-code {
-		font-family: var(--font-mono);
-		font-size: 0.875rem;
-		font-weight: 600;
-		color: var(--color-primary);
-		margin-bottom: var(--space-xs);
-	}
-
-	.ticket-customer {
-		font-weight: 500;
-		margin-bottom: var(--space-xs);
-	}
-
-	.ticket-description {
-		font-size: 0.875rem;
-		color: var(--color-text-muted);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.rush-badge {
-		position: absolute;
-		top: var(--space-sm);
-		right: var(--space-sm);
-		padding: var(--space-xs) var(--space-sm);
-		background-color: var(--color-rush);
+	/* Override new ticket button styling to stand out */
+	.lane-header-action :global(.new-ticket-btn) {
+		background-color: var(--color-primary);
 		color: white;
-		font-size: 0.625rem;
-		font-weight: 700;
-		border-radius: var(--radius-sm);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		border-color: var(--color-primary);
+	}
+
+	.lane-header-action :global(.new-ticket-btn:hover) {
+		background-color: var(--color-primary-dark, #1e3a8a);
 	}
 </style>
