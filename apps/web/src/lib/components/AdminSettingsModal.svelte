@@ -2,7 +2,17 @@
 	import Modal from './Modal.svelte';
 	import Input from './Input.svelte';
 	import Button from './Button.svelte';
-	import { verifyEmployeePin, ApiClientError, type VerifyPinResponse } from '$lib/services/api';
+	import {
+		verifyEmployeePin,
+		listEmployees,
+		createEmployee,
+		updateEmployee,
+		deleteEmployee,
+		ApiClientError,
+		type VerifyPinResponse,
+		type EmployeeSummary,
+		type EmployeeRole
+	} from '$lib/services/api';
 
 	type SettingsTab = 'store-info' | 'employees' | 'locations' | 'appearance';
 
@@ -18,10 +28,31 @@
 	// Authentication state
 	let isAuthenticated = $state(false);
 	let authenticatedEmployee: VerifyPinResponse | null = $state(null);
+	let adminPin = $state('');
 	let pin = $state('');
 	let pinError = $state('');
 	let isVerifying = $state(false);
 	let formEl: HTMLFormElement | undefined = $state();
+
+	// Employees tab state
+	let employees: EmployeeSummary[] = $state([]);
+	let employeesLoading = $state(false);
+	let employeesError = $state('');
+	let showInactive = $state(false);
+
+	// Employee form state
+	let showEmployeeForm = $state(false);
+	let editingEmployee: EmployeeSummary | null = $state(null);
+	let employeeFormName = $state('');
+	let employeeFormPin = $state('');
+	let employeeFormRole: EmployeeRole = $state('staff');
+	let employeeFormError = $state('');
+	let employeeFormSaving = $state(false);
+
+	// Delete confirmation state
+	let deleteConfirmEmployee: EmployeeSummary | null = $state(null);
+	let deleteError = $state('');
+	let deleteLoading = $state(false);
 
 	// Tab state
 	let activeTab: SettingsTab = $state('store-info');
@@ -50,10 +81,21 @@
 			// Reset to PIN entry state when opening
 			isAuthenticated = false;
 			authenticatedEmployee = null;
+			adminPin = '';
 			pin = '';
 			pinError = '';
 			isVerifying = false;
 			activeTab = 'store-info';
+
+			// Reset employees state
+			employees = [];
+			employeesLoading = false;
+			employeesError = '';
+			showInactive = false;
+			resetEmployeeForm();
+			deleteConfirmEmployee = null;
+			deleteError = '';
+			deleteLoading = false;
 		}
 	});
 
@@ -75,7 +117,8 @@
 				return;
 			}
 
-			// Authentication successful
+			// Authentication successful - store PIN for admin API calls
+			adminPin = pin;
 			authenticatedEmployee = employee;
 			isAuthenticated = true;
 		} catch (err) {
@@ -130,6 +173,174 @@
 	function focusTab(tabId: SettingsTab) {
 		const tabEl = document.querySelector(`[data-tab-id="${tabId}"]`) as HTMLElement | null;
 		tabEl?.focus();
+	}
+
+	// =============================================================================
+	// Employees Tab Functions
+	// =============================================================================
+
+	async function loadEmployees() {
+		if (!adminPin) return;
+
+		employeesLoading = true;
+		employeesError = '';
+
+		try {
+			const response = await listEmployees(adminPin, showInactive);
+			employees = response.employees;
+		} catch (err) {
+			if (err instanceof ApiClientError) {
+				employeesError = err.message || 'Failed to load employees';
+			} else {
+				employeesError = 'An error occurred while loading employees';
+			}
+		} finally {
+			employeesLoading = false;
+		}
+	}
+
+	// Load/reload employees when tab becomes active or showInactive changes
+	// Using a derived value to track showInactive without unused variable warnings
+	let currentShowInactive = $derived(showInactive);
+
+	$effect(() => {
+		// Access currentShowInactive to make this effect depend on it
+		if (
+			isAuthenticated &&
+			activeTab === 'employees' &&
+			adminPin &&
+			currentShowInactive !== undefined
+		) {
+			loadEmployees();
+		}
+	});
+
+	function resetEmployeeForm() {
+		showEmployeeForm = false;
+		editingEmployee = null;
+		employeeFormName = '';
+		employeeFormPin = '';
+		employeeFormRole = 'staff';
+		employeeFormError = '';
+		employeeFormSaving = false;
+	}
+
+	function handleAddEmployee() {
+		resetEmployeeForm();
+		showEmployeeForm = true;
+	}
+
+	function handleEditEmployee(employee: EmployeeSummary) {
+		resetEmployeeForm();
+		editingEmployee = employee;
+		employeeFormName = employee.name;
+		employeeFormPin = ''; // Don't populate PIN for security
+		employeeFormRole = employee.role;
+		showEmployeeForm = true;
+	}
+
+	function handleCancelEmployeeForm() {
+		resetEmployeeForm();
+	}
+
+	async function handleSaveEmployee() {
+		if (!adminPin) return;
+
+		// Validate
+		if (!employeeFormName.trim()) {
+			employeeFormError = 'Name is required';
+			return;
+		}
+
+		if (!editingEmployee && !employeeFormPin.trim()) {
+			employeeFormError = 'PIN is required for new employees';
+			return;
+		}
+
+		employeeFormSaving = true;
+		employeeFormError = '';
+
+		try {
+			if (editingEmployee) {
+				// Update existing employee
+				await updateEmployee(adminPin, editingEmployee.employee_id, {
+					name: employeeFormName.trim(),
+					pin: employeeFormPin.trim() || undefined,
+					role: employeeFormRole
+				});
+			} else {
+				// Create new employee
+				await createEmployee(adminPin, {
+					name: employeeFormName.trim(),
+					pin: employeeFormPin.trim(),
+					role: employeeFormRole
+				});
+			}
+
+			resetEmployeeForm();
+			await loadEmployees();
+		} catch (err) {
+			if (err instanceof ApiClientError) {
+				employeeFormError = err.message || 'Failed to save employee';
+			} else {
+				employeeFormError = 'An error occurred while saving';
+			}
+		} finally {
+			employeeFormSaving = false;
+		}
+	}
+
+	async function handleToggleActive(employee: EmployeeSummary) {
+		if (!adminPin) return;
+
+		try {
+			await updateEmployee(adminPin, employee.employee_id, {
+				is_active: !employee.is_active
+			});
+			await loadEmployees();
+		} catch (err) {
+			// Show error in the employees section
+			if (err instanceof ApiClientError) {
+				employeesError = err.message || 'Failed to update employee';
+			} else {
+				employeesError = 'An error occurred';
+			}
+		}
+	}
+
+	function handleDeleteClick(employee: EmployeeSummary) {
+		deleteConfirmEmployee = employee;
+		deleteError = '';
+	}
+
+	function handleCancelDelete() {
+		deleteConfirmEmployee = null;
+		deleteError = '';
+	}
+
+	async function handleConfirmDelete() {
+		if (!adminPin || !deleteConfirmEmployee) return;
+
+		deleteLoading = true;
+		deleteError = '';
+
+		try {
+			const response = await deleteEmployee(adminPin, deleteConfirmEmployee.employee_id);
+			if (response.warning) {
+				// Could show this warning somewhere, but for now just log it
+				console.warn(response.warning);
+			}
+			deleteConfirmEmployee = null;
+			await loadEmployees();
+		} catch (err) {
+			if (err instanceof ApiClientError) {
+				deleteError = err.message || 'Failed to delete employee';
+			} else {
+				deleteError = 'An error occurred while deleting';
+			}
+		} finally {
+			deleteLoading = false;
+		}
 	}
 </script>
 
@@ -220,11 +431,190 @@
 						class:active={activeTab === 'employees'}
 						hidden={activeTab !== 'employees'}
 					>
-						<div class="panel-placeholder">
-							<h3 class="placeholder-title">Employee Management</h3>
-							<p class="placeholder-text">
-								Add, edit, and manage employee accounts and permissions here.
-							</p>
+						<div class="employees-panel">
+							<!-- Header with Add button and filter -->
+							<div class="employees-header">
+								<h3 class="panel-title">Employees</h3>
+								<div class="employees-actions">
+									<label class="show-inactive-label">
+										<input
+											type="checkbox"
+											bind:checked={showInactive}
+											class="show-inactive-checkbox"
+										/>
+										Show inactive
+									</label>
+									<Button
+										variant="primary"
+										size="sm"
+										onclick={handleAddEmployee}
+										disabled={showEmployeeForm}
+									>
+										Add Employee
+									</Button>
+								</div>
+							</div>
+
+							<!-- Error message -->
+							{#if employeesError}
+								<div class="employees-error">{employeesError}</div>
+							{/if}
+
+							<!-- Loading state -->
+							{#if employeesLoading}
+								<div class="employees-loading">Loading employees...</div>
+							{:else}
+								<!-- Employee form (add/edit) -->
+								{#if showEmployeeForm}
+									<div class="employee-form">
+										<h4 class="employee-form-title">
+											{editingEmployee ? 'Edit Employee' : 'Add Employee'}
+										</h4>
+
+										<div class="employee-form-fields">
+											<Input
+												label="Name"
+												placeholder="Employee name"
+												bind:value={employeeFormName}
+												disabled={employeeFormSaving}
+												required
+											/>
+
+											<Input
+												label={editingEmployee ? 'New PIN (leave blank to keep current)' : 'PIN'}
+												type="password"
+												placeholder={editingEmployee ? 'Enter new PIN' : 'Enter PIN'}
+												bind:value={employeeFormPin}
+												disabled={employeeFormSaving}
+												required={!editingEmployee}
+											/>
+
+											<div class="form-field">
+												<label class="form-label" for="employee-role-select">Role</label>
+												<select
+													id="employee-role-select"
+													bind:value={employeeFormRole}
+													disabled={employeeFormSaving}
+													class="role-select"
+												>
+													<option value="staff">Staff</option>
+													<option value="admin">Admin</option>
+												</select>
+											</div>
+										</div>
+
+										{#if employeeFormError}
+											<div class="employee-form-error">{employeeFormError}</div>
+										{/if}
+
+										<div class="employee-form-actions">
+											<Button
+												variant="secondary"
+												size="sm"
+												onclick={handleCancelEmployeeForm}
+												disabled={employeeFormSaving}
+											>
+												Cancel
+											</Button>
+											<Button
+												variant="primary"
+												size="sm"
+												onclick={handleSaveEmployee}
+												loading={employeeFormSaving}
+												disabled={employeeFormSaving}
+											>
+												{editingEmployee ? 'Save Changes' : 'Add Employee'}
+											</Button>
+										</div>
+									</div>
+								{/if}
+
+								<!-- Delete confirmation -->
+								{#if deleteConfirmEmployee}
+									<div class="delete-confirm">
+										<p class="delete-confirm-message">
+											Are you sure you want to delete <strong>{deleteConfirmEmployee.name}</strong>?
+											This action cannot be undone.
+										</p>
+
+										{#if deleteError}
+											<div class="delete-error">{deleteError}</div>
+										{/if}
+
+										<div class="delete-confirm-actions">
+											<Button
+												variant="secondary"
+												size="sm"
+												onclick={handleCancelDelete}
+												disabled={deleteLoading}
+											>
+												Cancel
+											</Button>
+											<Button
+												variant="danger"
+												size="sm"
+												onclick={handleConfirmDelete}
+												loading={deleteLoading}
+												disabled={deleteLoading}
+											>
+												Delete
+											</Button>
+										</div>
+									</div>
+								{/if}
+
+								<!-- Employee list -->
+								{#if employees.length === 0}
+									<div class="employees-empty">
+										{showInactive ? 'No employees found.' : 'No active employees found.'}
+									</div>
+								{:else}
+									<div class="employees-list">
+										{#each employees as employee (employee.employee_id)}
+											<div class="employee-row" class:inactive={!employee.is_active}>
+												<div class="employee-info">
+													<span class="employee-name">{employee.name}</span>
+													<span class="employee-role" class:admin={employee.role === 'admin'}>
+														{employee.role}
+													</span>
+													{#if !employee.is_active}
+														<span class="employee-status-badge">Inactive</span>
+													{/if}
+												</div>
+												<div class="employee-actions">
+													<button
+														type="button"
+														class="action-btn edit-btn"
+														onclick={() => handleEditEmployee(employee)}
+														title="Edit"
+														disabled={showEmployeeForm || deleteConfirmEmployee !== null}
+													>
+														Edit
+													</button>
+													<button
+														type="button"
+														class="action-btn toggle-btn"
+														onclick={() => handleToggleActive(employee)}
+														title={employee.is_active ? 'Deactivate' : 'Activate'}
+														disabled={showEmployeeForm || deleteConfirmEmployee !== null}
+													>
+														{employee.is_active ? 'Deactivate' : 'Activate'}
+													</button>
+													<button
+														type="button"
+														class="action-btn delete-btn"
+														onclick={() => handleDeleteClick(employee)}
+														title="Delete"
+														disabled={showEmployeeForm || deleteConfirmEmployee !== null}
+													>
+														Delete
+													</button>
+												</div>
+											</div>
+										{/each}
+									</div>
+								{/if}
+							{/if}
 						</div>
 					</div>
 
@@ -416,6 +806,257 @@
 
 	.authenticated-user strong {
 		color: var(--color-text, #1e293b);
+	}
+
+	/* Employees Panel */
+	.employees-panel {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-md, 1rem);
+		padding: var(--space-sm, 0.5rem) 0;
+	}
+
+	.employees-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-md, 1rem);
+	}
+
+	.panel-title {
+		margin: 0;
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--color-text, #1e293b);
+	}
+
+	.employees-actions {
+		display: flex;
+		align-items: center;
+		gap: var(--space-md, 1rem);
+	}
+
+	.show-inactive-label {
+		display: flex;
+		align-items: center;
+		gap: var(--space-xs, 0.25rem);
+		font-size: 0.75rem;
+		color: var(--color-text-muted, #64748b);
+		cursor: pointer;
+	}
+
+	.show-inactive-checkbox {
+		cursor: pointer;
+	}
+
+	.employees-error,
+	.delete-error,
+	.employee-form-error {
+		padding: var(--space-sm, 0.5rem);
+		background-color: var(--color-danger-light, #fef2f2);
+		border: 1px solid var(--color-danger, #dc2626);
+		border-radius: var(--radius-sm, 0.25rem);
+		font-size: 0.875rem;
+		color: var(--color-danger, #dc2626);
+	}
+
+	.employees-loading,
+	.employees-empty {
+		text-align: center;
+		padding: var(--space-lg, 1.5rem);
+		color: var(--color-text-muted, #64748b);
+		font-size: 0.875rem;
+	}
+
+	/* Employee Form */
+	.employee-form {
+		padding: var(--space-md, 1rem);
+		background-color: var(--color-bg-subtle, #f8fafc);
+		border: 1px solid var(--color-border, #e2e8f0);
+		border-radius: var(--radius-md, 0.5rem);
+	}
+
+	.employee-form-title {
+		margin: 0 0 var(--space-md, 1rem);
+		font-size: 0.875rem;
+		font-weight: 600;
+		color: var(--color-text, #1e293b);
+	}
+
+	.employee-form-fields {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-md, 1rem);
+	}
+
+	.form-field {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-xs, 0.25rem);
+	}
+
+	.form-label {
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--color-text, #1e293b);
+	}
+
+	.role-select {
+		padding: var(--space-sm, 0.5rem);
+		font-size: 0.875rem;
+		border: 1px solid var(--color-border, #e2e8f0);
+		border-radius: var(--radius-sm, 0.25rem);
+		background-color: white;
+		cursor: pointer;
+	}
+
+	.role-select:focus {
+		outline: 2px solid var(--color-primary, #1e40af);
+		outline-offset: -1px;
+	}
+
+	.role-select:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.employee-form-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: var(--space-sm, 0.5rem);
+		margin-top: var(--space-md, 1rem);
+	}
+
+	/* Delete Confirmation */
+	.delete-confirm {
+		padding: var(--space-md, 1rem);
+		background-color: var(--color-danger-light, #fef2f2);
+		border: 1px solid var(--color-danger-muted, #fecaca);
+		border-radius: var(--radius-md, 0.5rem);
+	}
+
+	.delete-confirm-message {
+		margin: 0 0 var(--space-md, 1rem);
+		font-size: 0.875rem;
+		color: var(--color-text, #1e293b);
+	}
+
+	.delete-confirm-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: var(--space-sm, 0.5rem);
+	}
+
+	/* Employee List */
+	.employees-list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-xs, 0.25rem);
+	}
+
+	.employee-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: var(--space-sm, 0.5rem) var(--space-md, 1rem);
+		background-color: white;
+		border: 1px solid var(--color-border, #e2e8f0);
+		border-radius: var(--radius-sm, 0.25rem);
+		transition: background-color var(--transition-fast, 150ms ease);
+	}
+
+	.employee-row:hover {
+		background-color: var(--color-bg-subtle, #f8fafc);
+	}
+
+	.employee-row.inactive {
+		opacity: 0.6;
+	}
+
+	.employee-info {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm, 0.5rem);
+	}
+
+	.employee-name {
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--color-text, #1e293b);
+	}
+
+	.employee-role {
+		padding: 0.125rem 0.5rem;
+		font-size: 0.75rem;
+		font-weight: 500;
+		text-transform: capitalize;
+		background-color: var(--color-bg-subtle, #f1f5f9);
+		color: var(--color-text-muted, #64748b);
+		border-radius: var(--radius-full, 9999px);
+	}
+
+	.employee-role.admin {
+		background-color: var(--color-primary-light, #dbeafe);
+		color: var(--color-primary, #1e40af);
+	}
+
+	.employee-status-badge {
+		padding: 0.125rem 0.5rem;
+		font-size: 0.75rem;
+		font-weight: 500;
+		background-color: var(--color-warning-light, #fef3c7);
+		color: var(--color-warning-dark, #92400e);
+		border-radius: var(--radius-full, 9999px);
+	}
+
+	.employee-actions {
+		display: flex;
+		align-items: center;
+		gap: var(--space-xs, 0.25rem);
+	}
+
+	.action-btn {
+		padding: 0.25rem 0.5rem;
+		font-size: 0.75rem;
+		font-weight: 500;
+		border: none;
+		border-radius: var(--radius-sm, 0.25rem);
+		cursor: pointer;
+		transition:
+			background-color var(--transition-fast, 150ms ease),
+			opacity var(--transition-fast, 150ms ease);
+	}
+
+	.action-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.edit-btn {
+		background-color: var(--color-bg-subtle, #f1f5f9);
+		color: var(--color-text, #1e293b);
+	}
+
+	.edit-btn:hover:not(:disabled) {
+		background-color: var(--color-border, #e2e8f0);
+	}
+
+	.toggle-btn {
+		background-color: var(--color-warning-light, #fef3c7);
+		color: var(--color-warning-dark, #92400e);
+	}
+
+	.toggle-btn:hover:not(:disabled) {
+		background-color: var(--color-warning-muted, #fde68a);
+	}
+
+	.delete-btn {
+		background-color: var(--color-danger-light, #fef2f2);
+		color: var(--color-danger, #dc2626);
+	}
+
+	.delete-btn:hover:not(:disabled) {
+		background-color: var(--color-danger-muted, #fecaca);
 	}
 
 	/* Responsive */

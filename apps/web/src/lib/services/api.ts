@@ -28,7 +28,11 @@ import type {
 	EmployeeSummary,
 	VerifyPinResponse,
 	StorageLocation,
-	StoreSettings
+	StoreSettings,
+	CreateEmployeeRequest,
+	UpdateEmployeeRequest,
+	ListEmployeesResponse,
+	DeleteEmployeeResponse
 } from '$lib/types/api';
 
 // =============================================================================
@@ -248,6 +252,34 @@ async function put<T>(path: string, body?: unknown, adminPin?: string): Promise<
 		method: 'PUT',
 		headers: buildHeaders(adminPin),
 		body: body ? JSON.stringify(body) : undefined
+	});
+	return parseResponse<T>(response);
+}
+
+/**
+ * Make a DELETE request to the API.
+ */
+async function del<T>(path: string, adminPin?: string): Promise<T> {
+	const url = buildUrl(path);
+	const response = await fetch(url, {
+		method: 'DELETE',
+		headers: buildHeaders(adminPin)
+	});
+	return parseResponse<T>(response);
+}
+
+/**
+ * Make a GET request to the API with admin PIN.
+ */
+async function getWithAdmin<T>(
+	path: string,
+	adminPin: string,
+	params?: Record<string, unknown>
+): Promise<T> {
+	const url = buildUrl(path, params);
+	const response = await fetch(url, {
+		method: 'GET',
+		headers: buildHeaders(adminPin)
 	});
 	return parseResponse<T>(response);
 }
@@ -482,15 +514,58 @@ export async function createCustomer(request: CreateCustomerRequest): Promise<Cu
 }
 
 // =============================================================================
-// Employee Endpoints (Placeholder - not yet implemented in backend)
+// Employee Endpoints
 // =============================================================================
 
 /**
- * List all active employees.
- * Note: This endpoint is not yet implemented in the backend.
+ * List employees (admin only).
+ * Requires admin PIN for authorization.
+ * By default returns only active employees.
+ * Use includeInactive=true to include inactive employees.
  */
-export async function listEmployees(): Promise<EmployeeSummary[]> {
-	return get<EmployeeSummary[]>('/employees');
+export async function listEmployees(
+	adminPin: string,
+	includeInactive?: boolean
+): Promise<ListEmployeesResponse> {
+	const params = includeInactive ? { include_inactive: true } : undefined;
+	return getWithAdmin<ListEmployeesResponse>('/employees', adminPin, params);
+}
+
+/**
+ * Create a new employee (admin only).
+ * Requires admin PIN for authorization.
+ * Returns the created employee summary.
+ */
+export async function createEmployee(
+	adminPin: string,
+	request: CreateEmployeeRequest
+): Promise<EmployeeSummary> {
+	return post<EmployeeSummary>('/employees', request, adminPin);
+}
+
+/**
+ * Update an employee (admin only).
+ * Requires admin PIN for authorization.
+ * Returns the updated employee summary.
+ */
+export async function updateEmployee(
+	adminPin: string,
+	employeeId: string,
+	request: UpdateEmployeeRequest
+): Promise<EmployeeSummary> {
+	return put<EmployeeSummary>(`/employees/${employeeId}`, request, adminPin);
+}
+
+/**
+ * Delete an employee (admin only).
+ * Requires admin PIN for authorization.
+ * Returns deletion status with optional warning about history loss.
+ */
+export async function deleteEmployee(
+	adminPin: string,
+	employeeId: string
+): Promise<DeleteEmployeeResponse> {
+	return del<DeleteEmployeeResponse>(`/employees/${employeeId}`, adminPin);
 }
 
 /**
@@ -659,5 +734,9 @@ export type {
 	QueueLanes,
 	PaginationInfo,
 	InlineCustomer,
-	EmployeeRole
+	EmployeeRole,
+	CreateEmployeeRequest,
+	UpdateEmployeeRequest,
+	ListEmployeesResponse,
+	DeleteEmployeeResponse
 } from '$lib/types/api';

@@ -393,6 +393,41 @@ export interface VerifyPinResponse {
 	role: EmployeeRole;
 }
 
+/**
+ * Request body for creating an employee.
+ */
+export interface CreateEmployeeRequest {
+	name: string;
+	pin: string;
+	role?: EmployeeRole;
+}
+
+/**
+ * Request body for updating an employee.
+ */
+export interface UpdateEmployeeRequest {
+	name?: string;
+	pin?: string;
+	role?: EmployeeRole;
+	is_active?: boolean;
+}
+
+/**
+ * Response for listing employees.
+ */
+export interface ListEmployeesResponse {
+	employees: EmployeeSummary[];
+	count: number;
+}
+
+/**
+ * Response for deleting an employee.
+ */
+export interface DeleteEmployeeResponse {
+	deleted: boolean;
+	warning?: string;
+}
+
 // =============================================================================
 // Storage Location Types
 // =============================================================================
