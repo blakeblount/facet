@@ -1,7 +1,12 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import { themeStore, THEMES, THEME_NAMES, THEME_DESCRIPTIONS, type Theme } from '$lib/stores/theme.svelte';
 
 	let { data }: { data: PageData } = $props();
+
+	function handleThemeChange(theme: Theme) {
+		themeStore.set(theme);
+	}
 </script>
 
 <div class="admin-page">
@@ -16,6 +21,26 @@
 		</div>
 	{:else}
 		<div class="admin-sections">
+			<section class="admin-section">
+				<div class="section-header">
+					<h2 class="section-title">Appearance</h2>
+				</div>
+				<div class="section-content">
+					<div class="theme-toggle">
+						{#each THEMES as theme (theme)}
+							<button
+								class="theme-option"
+								class:active={themeStore.current === theme}
+								onclick={() => handleThemeChange(theme)}
+							>
+								<span class="theme-name">{THEME_NAMES[theme]}</span>
+								<span class="theme-description">{THEME_DESCRIPTIONS[theme]}</span>
+							</button>
+						{/each}
+					</div>
+				</div>
+			</section>
+
 			<section class="admin-section">
 				<div class="section-header">
 					<h2 class="section-title">Store Information</h2>
@@ -228,5 +253,44 @@
 		background-color: #fef2f2;
 		color: #991b1b;
 		border-radius: var(--radius-sm);
+	}
+
+	.theme-toggle {
+		display: flex;
+		gap: var(--space-md);
+	}
+
+	.theme-option {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-xs);
+		padding: var(--space-md);
+		background-color: var(--color-bg);
+		border: 2px solid var(--color-border);
+		border-radius: var(--radius-md);
+		cursor: pointer;
+		text-align: left;
+		transition: border-color var(--transition-fast, 150ms ease),
+			background-color var(--transition-fast, 150ms ease);
+	}
+
+	.theme-option:hover {
+		border-color: var(--color-primary-light, #3b82f6);
+	}
+
+	.theme-option.active {
+		border-color: var(--color-primary);
+		background-color: rgba(30, 64, 175, 0.05);
+	}
+
+	.theme-name {
+		font-weight: 600;
+		color: var(--color-text);
+	}
+
+	.theme-description {
+		font-size: 0.875rem;
+		color: var(--color-text-muted);
 	}
 </style>
