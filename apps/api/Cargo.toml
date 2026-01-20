@@ -16,6 +16,12 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dotenvy = "0.15"
 tower = "0.5"
+thiserror = "2"
+
+# AWS S3 SDK for photo storage
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1"
+aws-credential-types = "1"
 
 [dev-dependencies]
 http-body-util = "0.1"

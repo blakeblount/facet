@@ -9,8 +9,10 @@ pub mod models;
 pub mod response;
 pub mod routes;
 pub mod services;
+pub mod storage;
 
 pub use config::Config;
 pub use error::{codes as error_codes, AppError};
 pub use response::{created, empty, no_content, ok, ApiResponse, ApiResult};
 pub use routes::api_router;
+pub use storage::{StorageClient, StorageConfig, StorageError, StorageResult};

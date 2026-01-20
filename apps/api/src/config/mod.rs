@@ -1,5 +1,6 @@
 //! Application configuration from environment variables.
 
+use crate::storage::StorageConfig;
 use std::env;
 use std::net::SocketAddr;
 
@@ -112,6 +113,46 @@ impl Config {
             log_filter,
         }
     }
+
+    /// Create a StorageConfig from this Config.
+    ///
+    /// Uses the S3 configuration values (endpoint, bucket, credentials)
+    /// to build a StorageConfig for initializing the storage client.
+    pub fn storage_config(&self) -> StorageConfig {
+        let mut config = StorageConfig::new(self.s3_bucket.clone());
+
+        if let Some(endpoint) = &self.s3_endpoint {
+            config = config.with_endpoint(endpoint);
+            // Extract region from endpoint for S3-compatible services
+            // e.g., "https://nyc3.digitaloceanspaces.com" -> "nyc3"
+            if let Some(region) = extract_region_from_endpoint(endpoint) {
+                config = config.with_region(region);
+            }
+        }
+
+        if let (Some(access_key), Some(secret_key)) = (&self.s3_access_key, &self.s3_secret_key) {
+            config = config.with_credentials(access_key, secret_key);
+        }
+
+        config
+    }
+}
+
+/// Extract region from S3-compatible endpoint URL.
+/// For DigitalOcean Spaces: "https://nyc3.digitaloceanspaces.com" -> "nyc3"
+fn extract_region_from_endpoint(endpoint: &str) -> Option<String> {
+    // Remove protocol
+    let without_protocol = endpoint
+        .strip_prefix("https://")
+        .or_else(|| endpoint.strip_prefix("http://"))
+        .unwrap_or(endpoint);
+
+    // Get the first part before the dot
+    without_protocol
+        .split('.')
+        .next()
+        .map(|s| s.to_string())
+        .filter(|s| !s.is_empty())
 }
 
 /// Configuration loading errors.
@@ -146,5 +187,42 @@ mod tests {
         let config = Config::from_env_or_defaults();
         assert_eq!(config.server_addr.port(), 3001);
         assert!(!config.cors_origins.is_empty());
+    }
+
+    #[test]
+    fn test_extract_region_from_endpoint() {
+        // DigitalOcean Spaces
+        assert_eq!(
+            extract_region_from_endpoint("https://nyc3.digitaloceanspaces.com"),
+            Some("nyc3".to_string())
+        );
+        assert_eq!(
+            extract_region_from_endpoint("https://sfo2.digitaloceanspaces.com"),
+            Some("sfo2".to_string())
+        );
+
+        // Without protocol
+        assert_eq!(
+            extract_region_from_endpoint("nyc3.digitaloceanspaces.com"),
+            Some("nyc3".to_string())
+        );
+
+        // HTTP protocol
+        assert_eq!(
+            extract_region_from_endpoint("http://localhost:9000"),
+            Some("localhost:9000".to_string())
+        );
+
+        // Empty or invalid
+        assert_eq!(extract_region_from_endpoint(""), None);
+    }
+
+    #[test]
+    fn test_storage_config_from_config() {
+        let config = Config::from_env_or_defaults();
+        let storage_config = config.storage_config();
+
+        // Should use the bucket from config
+        assert_eq!(storage_config.bucket, config.s3_bucket);
     }
 }
