@@ -2557,3 +2557,58 @@ Rush toggle implementation in `apps/web/src/lib/components/IntakeFormModal.svelt
 - Colors are properly themed using CSS variables (--color-rush, --color-border, etc.)
 - The toggle is positioned in a full-width row spanning both columns in the form grid
 - Accessibility: checkbox has proper label association via wrapper label element
+
+---
+
+## TEST: facet-2lj - Search page loads correctly
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/search
+2. Page loaded successfully with title "Facet - Jewelry Repair Tracking"
+3. Examined page snapshot to verify all required UI elements
+
+### Success Criteria Results
+- [x] Page loads without errors - PASS - Page loaded successfully, no console errors blocking functionality
+- [x] Search input field is present and prominent - PASS - Searchbox with placeholder "Search tickets..." prominently displayed in main content area
+- [x] Status filter dropdown is present - PASS - Combobox present with options: All Statuses, Intake, In Progress, Waiting on Parts, Ready for Pickup, Closed, Archived
+- [x] From Date picker is present - PASS - "From Date" button/picker present with "Start date" placeholder text
+- [x] To Date picker is present - PASS - "To Date" button/picker present with "End date" placeholder text
+- [x] Search button is present - PASS - "Search" button clearly visible next to search input
+- [x] Page has appropriate header/navigation - PASS - Header includes Facet logo/link, navigation with "Workboard" and "Search" links, Settings link to /admin
+
+### Screenshots
+- None required - all elements verified via accessibility snapshot
+
+### Technical Details
+Search page layout (`apps/web/src/routes/search/+page.svelte`):
+- Main heading "Search Tickets" with descriptive paragraph
+- Search input row: searchbox + Search button
+- Filter row with three filter controls: Status combobox, From Date picker, To Date picker
+- Header navigation consistent with rest of app: Facet home link, Workboard, Search (active), Settings
+
+### Page Structure
+```
+Header/Banner:
+  - Facet logo/home link
+  - Quick search (header searchbox)
+  - Navigation: Workboard | Search (active) | Settings
+
+Main Content:
+  - Heading: "Search Tickets"
+  - Description paragraph
+  - Search row: [Search input] [Search button]
+  - Filter row: [Status dropdown] [From Date picker] [To Date picker]
+  - Placeholder text: "Enter a search term or apply filters to find tickets."
+```
+
+### Issues Found
+- None - All required elements present and properly labeled
+
+### Notes
+- Page provides clear affordances for ticket search with multiple filter options
+- Status filter includes all workflow states plus "Archived" option
+- Date pickers use consistent "Start date" / "End date" placeholder text
+- Search functionality is discoverable with descriptive heading and instructions
