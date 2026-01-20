@@ -191,3 +191,55 @@ After completing each test, append results to this file using this format:
 - Global search box available in header
 - Page description correctly states "Manage repair tickets across status lanes. Rush tickets appear first in each lane."
 
+---
+
+## TEST: facet-2od - Intake form validation - required fields
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/
+2. Clicked "+ New" button to open intake form modal
+3. Submitted empty form by triggering form submit event
+4. Observed 6 validation error messages appeared
+5. Filled Customer Name field with "Test Customer"
+6. Submitted form - Customer Name error cleared, 5 errors remained
+7. Filled Item Description with "Gold ring with diamond"
+8. Submitted form - Item Description error cleared, 4 errors remained
+9. Filled Condition Notes with "Minor scratches on band"
+10. Filled Requested Work with "Polish and resize"
+11. Submitted form - Both text field errors cleared, 2 errors remained
+12. Selected "Safe Drawer 1" from Storage Location dropdown
+13. Submitted form - Storage Location error cleared, 1 error remained
+14. Uploaded test photo via file picker
+15. Submitted form - All validation passed, Employee PIN modal appeared
+
+### Success Criteria Results
+- [x] Empty form submission is prevented - PASS - Form submit blocked, errors shown
+- [x] Customer Name required error shown when empty - PASS - "Customer name is required"
+- [x] Item Description required error shown when empty - PASS - "Item description is required"
+- [x] Condition Notes required error shown when empty - PASS - "Condition notes are required"
+- [x] Requested Work required error shown when empty - PASS - "Requested work is required"
+- [x] Storage Location required error shown when not selected - PASS - "Storage location is required"
+- [x] Photo required error shown when no photos uploaded - PASS - "At least one photo is required"
+- [x] Error messages are clear and specific to each field - PASS - Each message clearly states which field is required
+- [x] Errors clear when field is properly filled - PASS - Verified each error clears individually after filling and resubmitting
+
+### Screenshots
+- .playwright-mcp/intake-form-validation-empty.png - Shows validation errors after empty submit
+- .playwright-mcp/intake-form-validation-tall.png - Full form with errors visible
+- .playwright-mcp/intake-form-validation-passed.png - Employee PIN modal after validation passes
+
+### Issues Found
+- None - Validation works correctly
+
+### Notes
+- Validation only triggers on form submit (not real-time as user types)
+- All error messages use `role="alert"` for accessibility
+- The form correctly validates 6 required fields: Customer Name, Item Description, Condition Notes, Requested Work, Storage Location, and Photos
+- Phone and Email fields are optional (not validated as required)
+- Item Type field is optional (not validated as required)
+- Quote Amount field is optional but validates format if provided
+- When all fields are valid, form proceeds to Employee PIN verification step
+
