@@ -93,7 +93,8 @@
 
 	// Get days to display in calendar grid
 	const calendarDays = $derived.by(() => {
-		const days: Array<{ key: string; date: Date; isCurrentMonth: boolean; isDisabled: boolean }> = [];
+		const days: Array<{ key: string; date: Date; isCurrentMonth: boolean; isDisabled: boolean }> =
+			[];
 
 		// First day of the month
 		const firstDay = new Date(viewYear, viewMonth, 1);
