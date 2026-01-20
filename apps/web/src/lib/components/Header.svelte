@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import OfflineIndicator from './OfflineIndicator.svelte';
 
 	interface Props {
 		storeName?: string;
@@ -47,6 +48,7 @@
 		</div>
 
 		<div class="header-right">
+			<OfflineIndicator />
 			<nav class="nav-links">
 				<a href={resolve('/')} class="nav-link">Workboard</a>
 				<a href={resolve('/search')} class="nav-link">Search</a>

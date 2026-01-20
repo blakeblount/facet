@@ -21,6 +21,8 @@
 		type Customer,
 		type VerifyPinResponse
 	} from '$lib/services/api';
+	import { offlineStore } from '$lib/stores/offline.svelte';
+	import { syncQueueStore } from '$lib/services/syncQueue';
 
 	interface Props {
 		/** Whether the modal is open */
@@ -311,9 +313,39 @@
 		// Set the employee ID for API requests
 		setCurrentEmployee(employee.employee_id);
 
+		// Build the request
+		const request = buildCreateTicketRequest();
+
+		// Check if we're offline - if so, queue the ticket
+		if (offlineStore.isOffline) {
+			try {
+				const queuedTicket = await syncQueueStore.queue(
+					request,
+					photos,
+					employee.employee_id,
+					employee.name
+				);
+
+				// Show offline success message
+				successMessage = `Ticket saved offline! It will sync when you're back online.`;
+
+				// Close after a brief delay to show the message
+				setTimeout(() => {
+					// Use client ID for offline tickets (no server ID yet)
+					onSuccess?.(queuedTicket.clientId, 'OFFLINE');
+					onClose();
+				}, 1500);
+			} catch (err) {
+				submissionError = 'Failed to save ticket offline. Please try again.';
+				console.error('Failed to queue ticket offline:', err);
+			} finally {
+				isSubmitting = false;
+			}
+			return;
+		}
+
+		// Online submission
 		try {
-			// Build and submit the ticket
-			const request = buildCreateTicketRequest();
 			const response = await createTicket(request);
 
 			// Upload photos
@@ -338,7 +370,28 @@
 				onClose();
 			}, 1500);
 		} catch (err) {
-			if (err instanceof ApiClientError) {
+			// If we get a network error, try to queue offline
+			if (err instanceof TypeError && err.message.includes('fetch')) {
+				try {
+					const queuedTicket = await syncQueueStore.queue(
+						request,
+						photos,
+						employee.employee_id,
+						employee.name
+					);
+
+					successMessage = `Network unavailable. Ticket saved offline and will sync automatically.`;
+
+					setTimeout(() => {
+						onSuccess?.(queuedTicket.clientId, 'OFFLINE');
+						onClose();
+					}, 1500);
+					return;
+				} catch (queueErr) {
+					submissionError = 'Failed to save ticket. Please check your connection.';
+					console.error('Failed to queue ticket:', queueErr);
+				}
+			} else if (err instanceof ApiClientError) {
 				submissionError = err.message || 'Failed to create ticket. Please try again.';
 			} else {
 				submissionError = 'An unexpected error occurred. Please try again.';
@@ -366,6 +419,38 @@
 
 <Modal {open} title="New Repair Ticket" onClose={handleClose} closeOnBackdrop={!isSubmitting}>
 	<form class="intake-form" onsubmit={handleSubmit}>
+		<!-- Offline Banner -->
+		{#if offlineStore.isOffline}
+			<div class="offline-banner" role="status">
+				<svg
+					class="offline-icon"
+					xmlns="http://www.w3.org/2000/svg"
+					width="18"
+					height="18"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<line x1="2" x2="22" y1="2" y2="22" />
+					<path d="M8.5 16.5a5 5 0 0 1 7 0" />
+					<path d="M2 8.82a15 15 0 0 1 4.17-2.65" />
+					<path d="M10.66 5c4.01-.36 8.14.9 11.34 3.76" />
+					<path d="M16.85 11.25a10 10 0 0 1 2.22 1.68" />
+					<path d="M5 13a10 10 0 0 1 5.24-2.76" />
+					<line x1="12" x2="12.01" y1="20" y2="20" />
+				</svg>
+				<div class="offline-text">
+					<span class="offline-title">You're offline</span>
+					<span class="offline-description"
+						>Ticket will be saved locally and synced when back online</span
+					>
+				</div>
+			</div>
+		{/if}
+
 		<!-- Customer Section -->
 		<section class="form-section">
 			<h3 class="section-title">Customer Information</h3>
@@ -1023,6 +1108,39 @@
 		height: 100%;
 		background-color: var(--color-primary, #1e40af);
 		transition: width var(--transition-fast, 150ms ease);
+	}
+
+	/* Offline banner */
+	.offline-banner {
+		display: flex;
+		align-items: flex-start;
+		gap: var(--space-sm, 0.5rem);
+		padding: var(--space-md, 1rem);
+		background-color: rgba(251, 191, 36, 0.1);
+		border: 1px solid #fbbf24;
+		border-radius: var(--radius-md, 0.5rem);
+		color: #92400e;
+	}
+
+	.offline-icon {
+		flex-shrink: 0;
+		margin-top: 0.125rem;
+	}
+
+	.offline-text {
+		display: flex;
+		flex-direction: column;
+		gap: 0.125rem;
+	}
+
+	.offline-title {
+		font-size: 0.875rem;
+		font-weight: 600;
+	}
+
+	.offline-description {
+		font-size: 0.75rem;
+		opacity: 0.9;
 	}
 
 	/* Responsive adjustments */
