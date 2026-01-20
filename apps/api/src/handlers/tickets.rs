@@ -1252,6 +1252,95 @@ pub async fn change_status(
 }
 
 // =============================================================================
+// POST /tickets/:ticket_id/rush - Toggle Rush Flag
+// =============================================================================
+
+/// Request body for toggling rush flag.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ToggleRushRequest {
+    /// The new rush status to set
+    pub is_rush: bool,
+}
+
+/// Response for a rush flag toggle.
+#[derive(Debug, Clone, Serialize)]
+pub struct ToggleRushResponse {
+    /// The updated ticket
+    #[serde(flatten)]
+    pub ticket: Ticket,
+    /// The previous rush status
+    pub previous_is_rush: bool,
+}
+
+/// POST /api/v1/tickets/:ticket_id/rush - Toggle rush flag on a ticket.
+///
+/// Sets the is_rush flag and records the change in field history.
+/// Requires X-Employee-ID header for attribution.
+pub async fn toggle_rush(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(ticket_id): Path<Uuid>,
+    Json(body): Json<ToggleRushRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // 1. Extract and validate employee ID from header
+    let employee_id = extract_employee_id(&headers)?;
+
+    // Verify employee exists and is active
+    let employee = EmployeeRepository::find_active_by_id(&state.db, employee_id)
+        .await?
+        .ok_or_else(|| AppError::validation("Employee not found or inactive"))?;
+
+    // 2. Find the ticket
+    let existing_ticket = TicketRepository::find_by_id(&state.db, ticket_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Ticket not found"))?;
+
+    let previous_is_rush = existing_ticket.is_rush;
+
+    // 3. Check if ticket is closed/archived
+    if !existing_ticket.status.is_open() {
+        return Err(AppError::forbidden(
+            "Cannot modify rush flag on closed or archived ticket",
+        ));
+    }
+
+    // 4. Skip update if value is the same
+    if previous_is_rush == body.is_rush {
+        let response = ToggleRushResponse {
+            ticket: existing_ticket,
+            previous_is_rush,
+        };
+        return Ok(Json(ApiResponse::success(response)));
+    }
+
+    // 5. Update the rush flag
+    let updated_ticket =
+        TicketRepository::set_rush(&state.db, ticket_id, body.is_rush, employee.employee_id)
+            .await?;
+
+    // 6. Record field change in history
+    FieldHistoryRepository::create(
+        &state.db,
+        CreateFieldHistory {
+            ticket_id,
+            field_name: "is_rush".to_string(),
+            old_value: Some(previous_is_rush.to_string()),
+            new_value: Some(body.is_rush.to_string()),
+            changed_by: employee.employee_id,
+        },
+    )
+    .await?;
+
+    // 7. Return updated ticket with previous status
+    let response = ToggleRushResponse {
+        ticket: updated_ticket,
+        previous_is_rush,
+    };
+
+    Ok(Json(ApiResponse::success(response)))
+}
+
+// =============================================================================
 // POST /tickets/:ticket_id/photos - Upload Photo
 // =============================================================================
 
@@ -2052,5 +2141,67 @@ mod tests {
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("\"photo_id\":\"660e8400-e29b-41d4-a716-446655440000\""));
         assert!(json.contains("\"ticket_id\":\"550e8400-e29b-41d4-a716-446655440000\""));
+    }
+
+    #[test]
+    fn test_toggle_rush_request_deserialize_true() {
+        let json = r#"{"is_rush": true}"#;
+        let request: ToggleRushRequest = serde_json::from_str(json).unwrap();
+        assert!(request.is_rush);
+    }
+
+    #[test]
+    fn test_toggle_rush_request_deserialize_false() {
+        let json = r#"{"is_rush": false}"#;
+        let request: ToggleRushRequest = serde_json::from_str(json).unwrap();
+        assert!(!request.is_rush);
+    }
+
+    #[test]
+    fn test_toggle_rush_request_missing_field() {
+        let json = r#"{}"#;
+        let result: Result<ToggleRushRequest, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_toggle_rush_response_serialization() {
+        use chrono::TimeZone;
+
+        let ticket = Ticket {
+            ticket_id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
+            friendly_code: "JR-TEST1".to_string(),
+            customer_id: Uuid::parse_str("660e8400-e29b-41d4-a716-446655440000").unwrap(),
+            item_type: Some("ring".to_string()),
+            item_description: "Gold ring".to_string(),
+            condition_notes: "Good condition".to_string(),
+            requested_work: "Resize".to_string(),
+            status: TicketStatus::Intake,
+            is_rush: true,
+            promise_date: None,
+            storage_location_id: Uuid::parse_str("770e8400-e29b-41d4-a716-446655440000").unwrap(),
+            quote_amount: Some(Decimal::new(10000, 2)),
+            actual_amount: None,
+            taken_in_by: Uuid::parse_str("880e8400-e29b-41d4-a716-446655440000").unwrap(),
+            worked_by: None,
+            closed_by: None,
+            last_modified_by: Some(
+                Uuid::parse_str("880e8400-e29b-41d4-a716-446655440000").unwrap(),
+            ),
+            created_at: Utc.with_ymd_and_hms(2025, 1, 1, 12, 0, 0).unwrap(),
+            updated_at: Utc.with_ymd_and_hms(2025, 1, 1, 12, 0, 0).unwrap(),
+            closed_at: None,
+            queue_position: None,
+        };
+
+        let response = ToggleRushResponse {
+            ticket,
+            previous_is_rush: false,
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"ticket_id\":\"550e8400-e29b-41d4-a716-446655440000\""));
+        assert!(json.contains("\"is_rush\":true"));
+        assert!(json.contains("\"previous_is_rush\":false"));
     }
 }

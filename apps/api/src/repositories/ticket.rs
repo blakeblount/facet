@@ -544,6 +544,34 @@ impl TicketRepository {
         Ok(tickets)
     }
 
+    /// Toggle the rush flag on a ticket.
+    ///
+    /// Updates the is_rush field and the last_modified_by attribution.
+    pub async fn set_rush(
+        pool: &PgPool,
+        ticket_id: Uuid,
+        is_rush: bool,
+        modified_by: Uuid,
+    ) -> Result<Ticket, AppError> {
+        let ticket = sqlx::query_as::<_, Ticket>(
+            r#"
+            UPDATE tickets SET
+                is_rush = $2,
+                last_modified_by = $3,
+                updated_at = NOW()
+            WHERE ticket_id = $1
+            RETURNING *
+            "#,
+        )
+        .bind(ticket_id)
+        .bind(is_rush)
+        .bind(modified_by)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(ticket)
+    }
+
     /// Helper to convert TicketStatus to database string.
     fn status_to_string(status: &TicketStatus) -> String {
         match status {
