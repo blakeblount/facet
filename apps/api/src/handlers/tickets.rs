@@ -1021,6 +1021,69 @@ pub async fn update_ticket(
     Ok(Json(ApiResponse::success(updated_ticket)))
 }
 
+// =============================================================================
+// GET /queue - Workboard Queue
+// =============================================================================
+
+/// A single lane in the workboard queue.
+#[derive(Debug, Clone, Serialize)]
+pub struct QueueLane {
+    /// Number of tickets in this lane.
+    pub count: usize,
+    /// Tickets in this lane, sorted by rush first then FIFO.
+    pub tickets: Vec<QueueTicket>,
+}
+
+/// All lanes in the workboard queue.
+#[derive(Debug, Clone, Serialize)]
+pub struct QueueLanes {
+    pub intake: QueueLane,
+    pub in_progress: QueueLane,
+    pub waiting_on_parts: QueueLane,
+    pub ready_for_pickup: QueueLane,
+}
+
+/// Response for the GET /queue endpoint.
+#[derive(Debug, Clone, Serialize)]
+pub struct GetQueueResponse {
+    pub lanes: QueueLanes,
+}
+
+/// GET /api/v1/queue - Get workboard queue with tickets grouped by status lane.
+///
+/// Returns tickets grouped by status for workboard display.
+/// Each lane is sorted by rush first, then FIFO (oldest first).
+/// Excludes closed and archived tickets.
+/// Includes `is_overdue` flag for visual indicator.
+pub async fn get_queue(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
+    // Use the repository method which handles grouping and sorting
+    let queue = TicketRepository::get_queue(&state.db, None).await?;
+
+    // Build response with count for each lane
+    let response = GetQueueResponse {
+        lanes: QueueLanes {
+            intake: QueueLane {
+                count: queue.intake.len(),
+                tickets: queue.intake,
+            },
+            in_progress: QueueLane {
+                count: queue.in_progress.len(),
+                tickets: queue.in_progress,
+            },
+            waiting_on_parts: QueueLane {
+                count: queue.waiting_on_parts.len(),
+                tickets: queue.waiting_on_parts,
+            },
+            ready_for_pickup: QueueLane {
+                count: queue.ready_for_pickup.len(),
+                tickets: queue.ready_for_pickup,
+            },
+        },
+    };
+
+    Ok(Json(ApiResponse::success(response)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1365,5 +1428,75 @@ mod tests {
             "\"url\":\"/api/v1/tickets/abc/photos/990e8400-e29b-41d4-a716-446655440000\""
         ));
         assert!(json.contains("\"uploaded_by\""));
+    }
+
+    #[test]
+    fn test_queue_lane_serialization() {
+        let lane = QueueLane {
+            count: 2,
+            tickets: vec![],
+        };
+        let json = serde_json::to_string(&lane).unwrap();
+        assert!(json.contains("\"count\":2"));
+        assert!(json.contains("\"tickets\":[]"));
+    }
+
+    #[test]
+    fn test_queue_lanes_serialization() {
+        let lanes = QueueLanes {
+            intake: QueueLane {
+                count: 1,
+                tickets: vec![],
+            },
+            in_progress: QueueLane {
+                count: 2,
+                tickets: vec![],
+            },
+            waiting_on_parts: QueueLane {
+                count: 0,
+                tickets: vec![],
+            },
+            ready_for_pickup: QueueLane {
+                count: 3,
+                tickets: vec![],
+            },
+        };
+        let json = serde_json::to_string(&lanes).unwrap();
+        assert!(json.contains("\"intake\":{\"count\":1"));
+        assert!(json.contains("\"in_progress\":{\"count\":2"));
+        assert!(json.contains("\"waiting_on_parts\":{\"count\":0"));
+        assert!(json.contains("\"ready_for_pickup\":{\"count\":3"));
+    }
+
+    #[test]
+    fn test_get_queue_response_serialization() {
+        let response = GetQueueResponse {
+            lanes: QueueLanes {
+                intake: QueueLane {
+                    count: 0,
+                    tickets: vec![],
+                },
+                in_progress: QueueLane {
+                    count: 0,
+                    tickets: vec![],
+                },
+                waiting_on_parts: QueueLane {
+                    count: 0,
+                    tickets: vec![],
+                },
+                ready_for_pickup: QueueLane {
+                    count: 0,
+                    tickets: vec![],
+                },
+            },
+        };
+        let json = serde_json::to_string(&response).unwrap();
+        // Verify top-level "lanes" key exists
+        assert!(json.contains("\"lanes\":"));
+        // Verify all status lanes are present
+        assert!(json.contains("\"intake\""));
+        assert!(json.contains("\"in_progress\""));
+        assert!(json.contains("\"waiting_on_parts\""));
+        assert!(json.contains("\"ready_for_pickup\""));
     }
 }

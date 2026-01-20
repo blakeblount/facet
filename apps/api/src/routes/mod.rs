@@ -53,8 +53,13 @@ pub fn api_router(state: AppState) -> Router {
         .route("/{ticket_id}/receipt.pdf", get(handlers::get_receipt_pdf))
         .route("/{ticket_id}/label.pdf", get(handlers::get_label_pdf));
 
+    // Queue route
+    let queue_route = Router::new().route("/", get(handlers::get_queue));
+
     // API v1 routes
-    let api_v1 = Router::new().nest("/tickets", tickets_routes);
+    let api_v1 = Router::new()
+        .nest("/tickets", tickets_routes)
+        .nest("/queue", queue_route);
 
     Router::new()
         .route("/health", axum::routing::get(health::health_check))
