@@ -157,3 +157,37 @@ After completing each test, append results to this file using this format:
 - Component handles multiple files up to maxFiles limit
 - No upload progress needed for local file selection; progress would be relevant during form submission
 
+---
+
+## TEST: facet-prd - Workboard loads with all 4 status lanes
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/
+2. Page loaded successfully with title "Facet - Jewelry Repair Tracking"
+3. Observed the workboard layout with 4 horizontal status lanes
+4. Verified all expected elements were present and functional
+
+### Success Criteria Results
+- [x] Page loads without errors - PASS - No console errors detected
+- [x] 4 status lanes are visible: "Intake", "In Progress", "Waiting on Parts", "Ready for Pickup" - PASS - All 4 lanes displayed
+- [x] Each lane has a header with the status name - PASS - Headers show INTAKE, IN PROGRESS, WAITING ON PARTS, READY FOR PICKUP
+- [x] Each lane header shows a count badge with number of tickets - PASS - Intake shows "2", others show "0"
+- [x] Lanes are arranged horizontally - PASS - Lanes display side-by-side in a row
+- [x] "+New" button is visible in the Intake lane - PASS - Button visible with "+ New" label
+
+### Screenshots
+- .playwright-mcp/workboard-lanes-test.png
+
+### Issues Found
+- None
+
+### Notes
+- Workboard shows 2 tickets in Intake lane (JR-0001 John Smith Gold wedding band, JR-0002 Test Customer Gold ring)
+- Other lanes show "No tickets" placeholder text when empty
+- Header navigation includes Workboard, Search, and Settings links
+- Global search box available in header
+- Page description correctly states "Manage repair tickets across status lanes. Rush tickets appear first in each lane."
+
