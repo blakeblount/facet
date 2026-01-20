@@ -464,3 +464,58 @@ After completing each test, append results to this file using this format:
 - Error clears automatically when user tries a valid action
 - All file operations are local (client-side) until form submission
 
+---
+
+## TEST: facet-2f5 - Photo lightbox navigation
+**Date:** 2026-01-20
+**Status:** BLOCKED
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/
+2. Clicked on ticket card JR-0001 to view ticket details
+3. Observed: Browser navigated to /tickets/792dd6bc-32af-4ffa-a487-66fdd67e5523
+4. Page displayed "Ticket detail page coming soon." placeholder
+5. Verified TicketDetailModal.svelte component exists with full lightbox implementation
+6. Checked API for tickets with photos - JR-0003 has 1 photo, others have 0
+
+### Success Criteria Results
+- [ ] Next arrow button advances to next photo - **BLOCKED** - Cannot access lightbox (ticket detail modal not integrated)
+- [ ] Previous arrow button goes to previous photo - **BLOCKED**
+- [ ] Photo counter updates (e.g., "2 of 5") - **BLOCKED**
+- [ ] Right Arrow key advances to next photo - **BLOCKED**
+- [ ] Left Arrow key goes to previous photo - **BLOCKED**
+- [ ] Escape key closes the lightbox - **BLOCKED**
+- [ ] Navigation wraps around (last → first, first → last) OR buttons hide at ends - **BLOCKED**
+- [ ] Clicking outside image/on backdrop closes lightbox - **BLOCKED**
+
+### Screenshots
+- None captured (feature not accessible)
+
+### Issues Found
+- **HIGH**: TicketDetailModal component (with lightbox) is not integrated into the application
+  - Component exists at `apps/web/src/lib/components/TicketDetailModal.svelte` with full lightbox implementation
+  - Workboard page uses `navigateToTicket()` which redirects to `/tickets/[id]` instead of opening the modal
+  - The `/tickets/[id]` page is a placeholder ("Ticket detail page coming soon")
+  - Related issue: facet-19y (Ticket detail modal opens from workboard) was also BLOCKED
+- **MEDIUM**: No test tickets have 3+ photos needed for navigation testing
+  - JR-0003 has 1 photo, JR-0001 and JR-0002 have 0 photos
+
+### Code Analysis
+The lightbox implementation in TicketDetailModal.svelte (lines 56-192, 862-928) includes:
+- State: `lightboxPhoto`, `lightboxIndex` (lines 57-58)
+- Open/close: `openLightbox()`, `closeLightbox()` (lines 163-171)
+- Navigation: `navigateLightbox('prev'|'next')` with wrap-around (lines 173-181)
+- Keyboard handling: Escape to close, ArrowLeft/ArrowRight to navigate (lines 183-192)
+- UI: Dark overlay, centered image, prev/next buttons, close button, photo counter (lines 862-928)
+
+### Prerequisite Work Needed
+1. Integrate TicketDetailModal into workboard (change `navigateToTicket()` to open modal instead of navigating)
+2. OR Complete the `/tickets/[id]` page using TicketDetailModal component
+3. Create test data with 3+ photos on a ticket
+
+### Notes
+- This test cannot proceed until the TicketDetailModal is accessible through the UI
+- The lightbox code appears correctly implemented - this is purely an integration issue
+- Consider creating a dedicated UI test for the lightbox once integrated
+
