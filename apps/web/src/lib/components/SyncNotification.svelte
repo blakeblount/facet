@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { offlineStore } from '$lib/stores/offline.svelte';
-	import { syncQueueStore } from '$lib/services/syncQueue';
+	import { syncQueueStore } from '$lib/services/syncQueue.svelte';
 
 	// Track sync results for notifications
 	let notifications = $state<

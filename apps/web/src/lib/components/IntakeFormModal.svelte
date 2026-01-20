@@ -22,7 +22,7 @@
 		type VerifyPinResponse
 	} from '$lib/services/api';
 	import { offlineStore } from '$lib/stores/offline.svelte';
-	import { syncQueueStore } from '$lib/services/syncQueue';
+	import { syncQueueStore } from '$lib/services/syncQueue.svelte';
 
 	interface Props {
 		/** Whether the modal is open */

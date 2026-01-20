@@ -7,6 +7,7 @@
 	import StatusLane from '$lib/components/StatusLane.svelte';
 	import TicketCard from '$lib/components/TicketCard.svelte';
 	import EmployeeIdModal from '$lib/components/EmployeeIdModal.svelte';
+	import IntakeFormModal from '$lib/components/IntakeFormModal.svelte';
 	import {
 		changeTicketStatus,
 		setCurrentEmployee,
@@ -20,6 +21,9 @@
 	// Drag state
 	let draggingTicketId = $state<string | null>(null);
 	let dragOverLane = $state<TicketStatus | null>(null);
+
+	// Modal state for intake form
+	let showIntakeModal = $state(false);
 
 	// Modal state for PIN verification before status change
 	let showPinModal = $state(false);
@@ -77,8 +81,17 @@
 	});
 
 	function handleNewTicket() {
-		// TODO: Open intake form modal when implemented
-		console.log('New ticket clicked');
+		showIntakeModal = true;
+	}
+
+	function handleIntakeClose() {
+		showIntakeModal = false;
+	}
+
+	async function handleIntakeSuccess(ticketId: string, friendlyCode: string) {
+		showIntakeModal = false;
+		// Refresh the workboard to show the new ticket
+		await invalidateAll();
 	}
 
 	function handleDragStart(ticketId: string) {
@@ -311,6 +324,13 @@
 	title="Verify Employee PIN"
 	onClose={handlePinModalClose}
 	onSuccess={handlePinSuccess}
+/>
+
+<!-- Intake Form Modal for creating new tickets -->
+<IntakeFormModal
+	open={showIntakeModal}
+	onClose={handleIntakeClose}
+	onSuccess={handleIntakeSuccess}
 />
 
 <style>
