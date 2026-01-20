@@ -1417,3 +1417,60 @@ Add employee PIN modal flow to photo upload:
 - All form fields have helpful placeholder text guiding user input
 - Cancel and "Create & Print" buttons are visible at the bottom of the form
 - The close button (X) provides an alternative way to dismiss the modal
+
+---
+
+## TEST: facet-m79 - Drag Ticket Between Lanes
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/ (workboard)
+2. Verified workboard loaded with tickets in lanes:
+   - Intake: 1 ticket (JR-0003 "E2E Test Customer")
+   - In Progress: 1 ticket (JR-0002 "Test Customer" with Rush badge)
+3. Located JR-0003 ticket card in Intake lane
+4. Performed drag-and-drop from Intake lane to In Progress lane using Playwright's dragTo()
+5. Observed PIN verification modal appeared with title "Verify Employee PIN"
+6. Entered PIN "changeme" and clicked "Verify"
+7. Observed ticket JR-0003 moved to In Progress lane
+8. Verified lane counts updated (Intake: 0, In Progress: 2)
+9. Performed second drag test: moved JR-0002 from In Progress to Waiting on Parts
+10. PIN modal appeared again, entered "changeme", clicked "Verify"
+11. Ticket successfully moved to Waiting on Parts lane
+12. Ran JavaScript test to verify visual feedback during drag:
+    - Verified `is-dragging` class applied to ticket card
+    - Verified opacity changes to 0.5 during drag
+    - Verified transform scale(0.98) during drag
+    - Verified `is-drag-over` class on target lane
+    - Verified dashed border style on target lane
+    - Verified box-shadow on target lane
+
+### Success Criteria Results
+- [x] Ticket card is draggable (can pick it up) - PASS - Successfully dragged ticket using HTML5 drag-and-drop
+- [x] While dragging, card becomes semi-transparent (0.5 opacity) - PASS - Verified via JavaScript: `opacity: "0.5"`, `transform: "matrix(0.98, 0, 0, 0.98, 0, 0)"`
+- [x] Target lane shows visual feedback (dashed border, highlight) - PASS - Verified via JavaScript:
+  - `borderStyle: "dashed"`
+  - `borderColor: "rgb(30, 58, 95)"`
+  - `boxShadow: "rgba(30, 64, 175, 0.15) 0px 0px 0px 3px"`
+  - Both `is-drop-target` and `is-drag-over` classes applied
+- [x] Dropping triggers PIN verification modal - PASS - "Verify Employee PIN" modal appears immediately after drop
+- [x] After PIN verify, ticket moves to new lane - PASS - Ticket visually and persistently moves to target lane
+- [x] Lane counts update accordingly - PASS - Badge counts update immediately (Intake: 1→0, In Progress: 1→2)
+
+### Screenshots
+- .playwright-mcp/drag-ticket-workboard-after.png - Workboard after drag operations showing JR-0003 in In Progress and JR-0002 in Waiting on Parts
+
+### Issues Found
+- None - Drag and drop functionality works correctly
+
+### Notes
+- The drag-and-drop uses native HTML5 drag-and-drop API with `draggable="true"` attribute
+- Tickets are identified by `data-ticket-id` attribute for drag data transfer
+- The `is-dragging` class applies both opacity change (0.5) and slight scale reduction (0.98) for clear visual feedback
+- Target lanes show three visual cues: dashed border, color change, and box-shadow
+- PIN verification is required for all status changes (employee attribution for accountability)
+- Optimistic updates provide immediate visual feedback while API call completes
+- Dragging to the same lane (no status change) is silently ignored - no PIN modal shown
+- The implementation correctly handles drag events with `ondragover`, `ondragenter`, `ondragleave`, and `ondrop`
