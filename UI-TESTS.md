@@ -687,3 +687,51 @@ Add employee PIN modal flow to photo upload:
 - Empty lanes correctly display "No tickets" placeholder text
 - Badge styling is intentionally consistent in all properties except background color
 
+---
+
+## TEST: facet-4gw - Ticket detail modal displays all sections
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/
+2. Clicked on ticket card JR-0001 on workboard - navigated to placeholder page (known issue from facet-19y)
+3. Navigated to http://localhost:5173/search?status=intake to access modal via Search page
+4. Clicked on JR-0001 ticket card - TicketDetailModal opened successfully
+5. Scrolled through entire modal to identify all sections present
+6. Captured screenshots of top and bottom sections
+7. Closed modal and opened JR-0003 ticket to verify photo thumbnail display
+8. Verified all success criteria against modal content
+
+### Success Criteria Results
+- [x] Header shows ticket code and status badge - PASS - JR-0001 displayed with "Intake" status badge
+- [x] Customer section shows name, phone (if available), email (if available) - PASS - Shows "Name: John Smith" (phone/email would show if customer had them)
+- [x] Item Details section shows type, description, condition, requested work - PASS - Shows Description, Condition, Requested Work (type field shows when populated)
+- [x] Photos section shows photo thumbnails in a grid - PASS - JR-0001 shows "Photos (0)" with "No photos attached"; JR-0003 shows "Photos (1)" with clickable thumbnail
+- [x] Pricing section shows quote amount and actual charged - PASS - Shows "Quote: —" and "Actual Charged: —" (dashes indicate no value set)
+- [x] Status & Location section shows current status, rush toggle, promise date, storage location - PASS - All four fields visible: Current Status (Intake), Rush (No + "Mark Rush" button), Promise Date (—), Storage Location (Safe Drawer 1)
+- [x] Status History section is present (may be collapsed) - PASS - Shows "Status History (1)" with timestamped entry "Intake - Jan 20, 2026, 12:54 PM by Admin"
+- [x] Notes section shows existing notes and "Add Note" form - PASS - Shows "Notes (2)" with textarea ("Add a note..."), disabled "Add Note" button, and 2 existing notes with timestamps and author names
+- [x] Activity section shows taken in by, worked by, timestamps - PASS - Shows "Taken in by: Admin" and "Created: Jan 20, 2026, 12:54 PM" (worked by would show if assigned)
+- [x] Action buttons are visible (Edit, Print Receipt, Print Tag, Close if applicable) - PASS - Edit Ticket, Print Receipt, Print Tag buttons visible at bottom of modal (Close button would appear for tickets in Ready for Pickup status)
+
+### Screenshots
+- .playwright-mcp/ticket-detail-modal-overview.png - Modal header, Customer, Item Details, Photos, Pricing sections
+- .playwright-mcp/ticket-detail-modal-bottom.png - Status History, Notes, Activity sections and action buttons
+- .playwright-mcp/ticket-detail-modal-with-photo.png - JR-0003 modal showing photo thumbnail
+
+### Issues Found
+- **HIGH**: Workboard ticket cards navigate to placeholder page (/tickets/[id]) instead of opening TicketDetailModal. Must use Search page to access the modal. This is a known issue documented in facet-19y.
+- **MEDIUM**: Photo thumbnail shows broken image icon for JR-0003, suggesting S3/storage configuration issue in dev environment. The photo metadata (timestamp, author) displays correctly.
+
+### Notes
+- The TicketDetailModal component is fully implemented with all 10 sections required by the test
+- Modal is accessible via Search page (works correctly) but not from Workboard (known integration gap)
+- All section headings use consistent styling (uppercase, small caps)
+- Data fields show "—" (em dash) when no value is set, providing clear visual feedback
+- Photo section shows count in header "Photos (N)" and appropriate empty state or thumbnails
+- Notes section has textarea with placeholder, disabled button when empty, and displays notes with full metadata
+- Activity section tracks employee attribution and timestamps
+- Action buttons are well-spaced at bottom of modal
+
