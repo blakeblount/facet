@@ -1,7 +1,7 @@
 <script lang="ts">
 	import favicon from '$lib/assets/favicon.svg';
 	import { ReloadPrompt, InstallPrompt } from '$lib/pwa';
-	import { resolve } from '$app/paths';
+	import Header from '$lib/components/Header.svelte';
 	import '../app.css';
 
 	let { children } = $props();
@@ -13,19 +13,7 @@
 </svelte:head>
 
 <div class="app-layout">
-	<!-- Header slot area - Header component will be added here -->
-	<header class="app-header">
-		<div class="header-content">
-			<a href={resolve('/')} class="logo">
-				<span class="logo-text">Facet</span>
-			</a>
-			<nav class="nav-links">
-				<a href={resolve('/')} class="nav-link">Workboard</a>
-				<a href={resolve('/search')} class="nav-link">Search</a>
-				<a href={resolve('/admin')} class="nav-link">Admin</a>
-			</nav>
-		</div>
-	</header>
+	<Header />
 
 	<!-- Main content area -->
 	<main class="app-main">
