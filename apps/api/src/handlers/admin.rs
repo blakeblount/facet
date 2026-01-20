@@ -113,6 +113,55 @@ pub struct ChangePinResponse {
     pub settings: StoreSettingsPublic,
 }
 
+// =============================================================================
+// POST /admin/verify - Verify Admin PIN
+// =============================================================================
+
+/// Request body for admin PIN verification.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AdminVerifyRequest {
+    /// The PIN to verify
+    pub pin: String,
+}
+
+/// Response for successful admin verification.
+#[derive(Debug, Clone, Serialize)]
+pub struct AdminVerifyResponse {
+    /// Whether the PIN was valid
+    pub valid: bool,
+}
+
+/// POST /api/v1/admin/verify - Verify the admin PIN.
+///
+/// This endpoint verifies that a given PIN matches the admin PIN.
+/// Used by the UI to unlock admin features.
+///
+/// # Request Body
+/// - `pin`: The PIN to verify
+///
+/// # Returns
+/// - Success: `{ "valid": true }`
+///
+/// # Errors
+/// - INVALID_PIN: If the PIN is incorrect
+pub async fn verify_admin(
+    State(state): State<AppState>,
+    Json(body): Json<AdminVerifyRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let is_valid = StoreSettingsRepository::verify_admin_pin(&state.db, &body.pin).await?;
+
+    if !is_valid {
+        return Err(AppError::invalid_pin("Invalid admin PIN"));
+    }
+
+    let response = AdminVerifyResponse { valid: true };
+    Ok(Json(ApiResponse::success(response)))
+}
+
+// =============================================================================
+// POST /admin/change-pin - Change Admin PIN
+// =============================================================================
+
 /// POST /api/v1/admin/change-pin - Change the admin PIN.
 ///
 /// This endpoint allows changing the admin PIN after initial setup.
@@ -219,6 +268,45 @@ mod tests {
         let json = r#"{"new_pin": ""}"#;
         let request: ChangePinRequest = serde_json::from_str(json).unwrap();
         assert_eq!(request.new_pin, "");
+    }
+
+    // Tests for AdminVerifyRequest
+
+    #[test]
+    fn test_admin_verify_request_deserialize() {
+        let json = r#"{"pin": "secret1234"}"#;
+        let request: AdminVerifyRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.pin, "secret1234");
+    }
+
+    #[test]
+    fn test_admin_verify_request_missing_pin() {
+        let json = r#"{}"#;
+        let result: Result<AdminVerifyRequest, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_admin_verify_request_empty_pin() {
+        let json = r#"{"pin": ""}"#;
+        let request: AdminVerifyRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.pin, "");
+    }
+
+    // Tests for AdminVerifyResponse
+
+    #[test]
+    fn test_admin_verify_response_serialization() {
+        let response = AdminVerifyResponse { valid: true };
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"valid\":true"));
+    }
+
+    #[test]
+    fn test_admin_verify_response_valid_false() {
+        let response = AdminVerifyResponse { valid: false };
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"valid\":false"));
     }
 
     // Tests for ChangePinResponse

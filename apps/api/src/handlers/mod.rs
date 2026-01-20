@@ -8,7 +8,7 @@ pub mod customers;
 pub mod employees;
 pub mod tickets;
 
-pub use admin::{admin_setup, change_pin};
+pub use admin::{admin_setup, change_pin, verify_admin};
 pub use customers::{get_customer, search_customers};
 pub use employees::{create_employee, delete_employee, update_employee, verify_employee_pin};
 pub use tickets::{
