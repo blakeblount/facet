@@ -3,14 +3,19 @@
 	import Button from './Button.svelte';
 	import Input from './Input.svelte';
 	import PhotoUpload from './PhotoUpload.svelte';
+	import EmployeeIdModal from './EmployeeIdModal.svelte';
 	import {
 		getTicket,
 		fetchReceiptPdf,
 		fetchLabelPdf,
 		closeTicket,
+		toggleRush,
+		addTicketNote,
+		setCurrentEmployee,
 		type TicketDetailResponse,
 		type TicketStatus,
-		type TicketPhoto
+		type TicketPhoto,
+		type VerifyPinResponse
 	} from '$lib/services/api';
 	import { uploadTicketPhoto } from '$lib/services/api';
 
@@ -58,6 +63,18 @@
 	let isUploading: boolean = $state(false);
 	let uploadProgress: number = $state(0);
 	let uploadError: string | null = $state(null);
+
+	// Rush toggle state
+	let isTogglingRush: boolean = $state(false);
+	let rushError: string | null = $state(null);
+	let showRushEmployeeModal: boolean = $state(false);
+	let pendingRushValue: boolean = $state(false);
+
+	// Notes state
+	let newNoteContent: string = $state('');
+	let isAddingNote: boolean = $state(false);
+	let noteError: string | null = $state(null);
+	let showNoteEmployeeModal: boolean = $state(false);
 
 	// Fetch ticket when ticketId changes and modal is open
 	$effect(() => {
@@ -312,6 +329,62 @@
 	function isTicketClosed(): boolean {
 		return ticket?.status === 'closed' || ticket?.status === 'archived';
 	}
+
+	// Rush toggle handlers
+	function handleRushToggleClick() {
+		if (!ticket || isTogglingRush || isTicketClosed()) return;
+		pendingRushValue = !ticket.is_rush;
+		showRushEmployeeModal = true;
+	}
+
+	async function handleRushEmployeeSuccess(employee: VerifyPinResponse) {
+		if (!ticket) return;
+		showRushEmployeeModal = false;
+		isTogglingRush = true;
+		rushError = null;
+
+		try {
+			setCurrentEmployee(employee.employee_id);
+			await toggleRush(ticket.ticket_id, pendingRushValue);
+			// Refresh ticket to show updated data
+			await fetchTicket(ticket.ticket_id);
+		} catch (e) {
+			rushError = e instanceof Error ? e.message : 'Failed to update rush status';
+		} finally {
+			isTogglingRush = false;
+			setCurrentEmployee(null);
+		}
+	}
+
+	// Notes handlers
+	function handleAddNoteClick() {
+		if (!newNoteContent.trim()) {
+			noteError = 'Please enter a note';
+			return;
+		}
+		noteError = null;
+		showNoteEmployeeModal = true;
+	}
+
+	async function handleNoteEmployeeSuccess(employee: VerifyPinResponse) {
+		if (!ticket || !newNoteContent.trim()) return;
+		showNoteEmployeeModal = false;
+		isAddingNote = true;
+		noteError = null;
+
+		try {
+			setCurrentEmployee(employee.employee_id);
+			await addTicketNote(ticket.ticket_id, newNoteContent.trim());
+			newNoteContent = '';
+			// Refresh ticket to show new note
+			await fetchTicket(ticket.ticket_id);
+		} catch (e) {
+			noteError = e instanceof Error ? e.message : 'Failed to add note';
+		} finally {
+			isAddingNote = false;
+			setCurrentEmployee(null);
+		}
+	}
 </script>
 
 <Modal {open} title={ticket?.friendly_code ?? 'Ticket Details'} {onClose}>
@@ -512,6 +585,43 @@
 			<section class="detail-section">
 				<h3 class="section-title">Status & Location</h3>
 				<div class="section-content">
+					<div class="info-row">
+						<span class="info-label">Current Status</span>
+						<span class="info-value">
+							<span class="status-badge inline {getStatusClass(ticket.status)}">
+								{getStatusLabel(ticket.status)}
+							</span>
+						</span>
+					</div>
+					<div class="info-row">
+						<span class="info-label">Rush</span>
+						<span class="info-value rush-row">
+							{#if ticket.is_rush}
+								<span class="rush-badge">RUSH</span>
+							{:else}
+								<span class="rush-off">No</span>
+							{/if}
+							{#if !isTicketClosed()}
+								<button
+									type="button"
+									class="rush-toggle-btn"
+									onclick={handleRushToggleClick}
+									disabled={isTogglingRush}
+								>
+									{#if isTogglingRush}
+										<span class="spinner-small"></span>
+									{:else if ticket.is_rush}
+										Remove Rush
+									{:else}
+										Mark Rush
+									{/if}
+								</button>
+							{/if}
+						</span>
+					</div>
+					{#if rushError}
+						<div class="inline-error">{rushError}</div>
+					{/if}
 					<div class="info-row" class:editable={isEditing}>
 						<span class="info-label">Promise Date</span>
 						<span class="info-value">
@@ -541,10 +651,78 @@
 				</div>
 			</section>
 
+			<!-- Status History Section -->
+			<section class="detail-section">
+				<h3 class="section-title">Status History ({ticket.status_history.length})</h3>
+				<div class="section-content">
+					{#if ticket.status_history.length > 0}
+						<ul class="status-history-list">
+							{#each ticket.status_history as entry, index (index)}
+								<li class="status-history-item">
+									<div class="status-history-change">
+										{#if entry.from_status}
+											<span class="status-badge small {getStatusClass(entry.from_status)}">
+												{getStatusLabel(entry.from_status)}
+											</span>
+											<svg
+												class="status-arrow"
+												viewBox="0 0 16 16"
+												fill="currentColor"
+												aria-hidden="true"
+											>
+												<path
+													fill-rule="evenodd"
+													d="M8.22 2.97a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06l2.97-2.97H3.75a.75.75 0 0 1 0-1.5h7.44L8.22 4.03a.75.75 0 0 1 0-1.06Z"
+													clip-rule="evenodd"
+												/>
+											</svg>
+										{/if}
+										<span class="status-badge small {getStatusClass(entry.to_status)}">
+											{getStatusLabel(entry.to_status)}
+										</span>
+									</div>
+									<span class="status-history-meta">
+										{formatDateTime(entry.changed_at)} by {entry.changed_by.name}
+									</span>
+								</li>
+							{/each}
+						</ul>
+					{:else}
+						<p class="empty-message">No status changes recorded</p>
+					{/if}
+				</div>
+			</section>
+
 			<!-- Notes Section -->
 			<section class="detail-section">
 				<h3 class="section-title">Notes ({ticket.notes.length})</h3>
 				<div class="section-content">
+					{#if !isTicketClosed()}
+						<div class="add-note-form">
+							<div class="add-note-input-wrapper">
+								<textarea
+									class="add-note-input"
+									placeholder="Add a note..."
+									bind:value={newNoteContent}
+									disabled={isAddingNote}
+									rows="2"
+								></textarea>
+							</div>
+							<div class="add-note-actions">
+								{#if noteError}
+									<span class="add-note-error">{noteError}</span>
+								{/if}
+								<Button
+									variant="secondary"
+									onclick={handleAddNoteClick}
+									disabled={isAddingNote || !newNoteContent.trim()}
+									loading={isAddingNote}
+								>
+									Add Note
+								</Button>
+							</div>
+						</div>
+					{/if}
 					{#if ticket.notes.length > 0}
 						<ul class="notes-list">
 							{#each ticket.notes as note (note.note_id)}
@@ -556,8 +734,8 @@
 								</li>
 							{/each}
 						</ul>
-					{:else}
-						<p class="empty-message">No notes yet</p>
+					{:else if isTicketClosed()}
+						<p class="empty-message">No notes</p>
 					{/if}
 				</div>
 			</section>
@@ -788,6 +966,22 @@
 		</div>
 	</div>
 </Modal>
+
+<!-- Employee PIN Modal for Rush Toggle -->
+<EmployeeIdModal
+	open={showRushEmployeeModal}
+	title="Verify Employee"
+	onClose={() => (showRushEmployeeModal = false)}
+	onSuccess={handleRushEmployeeSuccess}
+/>
+
+<!-- Employee PIN Modal for Adding Notes -->
+<EmployeeIdModal
+	open={showNoteEmployeeModal}
+	title="Verify Employee"
+	onClose={() => (showNoteEmployeeModal = false)}
+	onSuccess={handleNoteEmployeeSuccess}
+/>
 
 <style>
 	.ticket-detail-content {
@@ -1091,6 +1285,152 @@
 	.note-meta {
 		font-size: 0.75rem;
 		color: var(--color-text-muted, #64748b);
+	}
+
+	/* Status badge inline variant */
+	.status-badge.inline {
+		display: inline-block;
+		vertical-align: middle;
+	}
+
+	.status-badge.small {
+		padding: 0.125rem 0.375rem;
+		font-size: 0.75rem;
+	}
+
+	/* Rush toggle row */
+	.rush-row {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm, 0.5rem);
+	}
+
+	.rush-off {
+		font-size: 0.875rem;
+		color: var(--color-text-muted, #64748b);
+	}
+
+	.rush-toggle-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-xs, 0.25rem);
+		padding: var(--space-xs, 0.25rem) var(--space-sm, 0.5rem);
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--color-primary, #1e40af);
+		background: none;
+		border: 1px solid var(--color-primary, #1e40af);
+		border-radius: var(--radius-md, 0.5rem);
+		cursor: pointer;
+		transition:
+			background-color var(--transition-fast, 150ms ease),
+			color var(--transition-fast, 150ms ease);
+	}
+
+	.rush-toggle-btn:hover:not(:disabled) {
+		background-color: var(--color-primary, #1e40af);
+		color: white;
+	}
+
+	.rush-toggle-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.spinner-small {
+		width: 12px;
+		height: 12px;
+		border: 2px solid var(--color-border, #e2e8f0);
+		border-top-color: var(--color-primary, #1e40af);
+		border-radius: 50%;
+		animation: spin 0.8s linear infinite;
+	}
+
+	.inline-error {
+		font-size: 0.75rem;
+		color: var(--color-rush, #ef4444);
+		margin-top: var(--space-xs, 0.25rem);
+		padding-left: 140px;
+	}
+
+	/* Status history */
+	.status-history-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+
+	.status-history-item {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-xs, 0.25rem);
+		padding: var(--space-sm, 0.5rem) 0;
+	}
+
+	.status-history-item:not(:last-child) {
+		border-bottom: 1px solid var(--color-border, #e2e8f0);
+	}
+
+	.status-history-change {
+		display: flex;
+		align-items: center;
+		gap: var(--space-xs, 0.25rem);
+	}
+
+	.status-arrow {
+		width: 14px;
+		height: 14px;
+		color: var(--color-text-muted, #64748b);
+	}
+
+	.status-history-meta {
+		font-size: 0.75rem;
+		color: var(--color-text-muted, #64748b);
+	}
+
+	/* Add note form */
+	.add-note-form {
+		margin-bottom: var(--space-md, 1rem);
+		padding-bottom: var(--space-md, 1rem);
+		border-bottom: 1px solid var(--color-border, #e2e8f0);
+	}
+
+	.add-note-input-wrapper {
+		margin-bottom: var(--space-sm, 0.5rem);
+	}
+
+	.add-note-input {
+		width: 100%;
+		padding: var(--space-sm, 0.5rem);
+		font-size: 0.875rem;
+		font-family: inherit;
+		border: 1px solid var(--color-border, #e2e8f0);
+		border-radius: var(--radius-md, 0.5rem);
+		resize: vertical;
+		min-height: 60px;
+		transition: border-color var(--transition-fast, 150ms ease);
+	}
+
+	.add-note-input:focus {
+		outline: none;
+		border-color: var(--color-primary, #1e40af);
+	}
+
+	.add-note-input:disabled {
+		background-color: var(--color-bg, #f8fafc);
+		cursor: not-allowed;
+	}
+
+	.add-note-actions {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: var(--space-sm, 0.5rem);
+	}
+
+	.add-note-error {
+		font-size: 0.75rem;
+		color: var(--color-rush, #ef4444);
 	}
 
 	/* Empty state */

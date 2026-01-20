@@ -336,6 +336,56 @@ export async function closeTicket(
 }
 
 /**
+ * Request body for toggling rush flag.
+ */
+export interface ToggleRushRequest {
+	is_rush: boolean;
+}
+
+/**
+ * Response for a rush flag toggle.
+ */
+export interface ToggleRushResponse extends Ticket {
+	previous_is_rush: boolean;
+}
+
+/**
+ * Toggle rush flag on a ticket.
+ * Requires X-Employee-ID header (set via setCurrentEmployee).
+ */
+export async function toggleRush(ticketId: string, isRush: boolean): Promise<ToggleRushResponse> {
+	const request: ToggleRushRequest = { is_rush: isRush };
+	return post<ToggleRushResponse>(`/tickets/${ticketId}/rush`, request);
+}
+
+/**
+ * Request body for adding a note.
+ */
+export interface AddNoteRequest {
+	content: string;
+}
+
+/**
+ * Response for adding a note.
+ */
+export interface AddNoteResponse {
+	note_id: string;
+	ticket_id: string;
+	content: string;
+	created_by: string;
+	created_at: string;
+}
+
+/**
+ * Add a note to a ticket.
+ * Requires X-Employee-ID header (set via setCurrentEmployee).
+ */
+export async function addTicketNote(ticketId: string, content: string): Promise<AddNoteResponse> {
+	const request: AddNoteRequest = { content };
+	return post<AddNoteResponse>(`/tickets/${ticketId}/notes`, request);
+}
+
+/**
  * Get the receipt PDF URL for a ticket.
  */
 export function getReceiptPdfUrl(ticketId: string): string {
