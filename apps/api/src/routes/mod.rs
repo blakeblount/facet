@@ -90,7 +90,9 @@ pub fn api_router(state: AppState) -> Router {
         .route("/verify", post(handlers::verify_employee_pin));
 
     // Admin routes
-    let admin_routes = Router::new().route("/setup", post(handlers::admin_setup));
+    let admin_routes = Router::new()
+        .route("/setup", post(handlers::admin_setup))
+        .route("/change-pin", post(handlers::change_pin));
 
     // API v1 routes
     let api_v1 = Router::new()
