@@ -895,3 +895,48 @@ Add employee PIN modal flow to photo upload:
 - Form buttons include Cancel (to close modal) and Create & Print (to submit)
 - Close modal (X) button available in header
 
+---
+
+## TEST: facet-81i - Select Customer from Autocomplete Populates Fields
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Verified database has customer with phone and email (John Smith: 555-123-4567, john.smith@example.com)
+2. Navigated to http://localhost:5173/
+3. Clicked "+ New" button to open intake form modal
+4. Typed "John" slowly in Customer Name field to trigger autocomplete
+5. Observed autocomplete dropdown appeared with "John Smith" showing phone and email
+6. Clicked on "John Smith" option in dropdown
+7. Verified Customer Name field now shows "John Smith"
+8. Verified Phone field auto-populated with "555-123-4567" and is disabled
+9. Verified Email field auto-populated with "john.smith@example.com" and is disabled
+10. Verified "Existing customer selected" message displayed below Customer Name
+11. Verified "Clear customer selection" button (X) appeared next to Customer Name
+12. Verified autocomplete dropdown closed after selection
+
+### Success Criteria Results
+- [x] Clicking customer fills the Customer Name field - PASS - Shows "John Smith"
+- [x] Phone field auto-populates with customer's phone - PASS - Shows "555-123-4567"
+- [x] Email field auto-populates with customer's email - PASS - Shows "john.smith@example.com"
+- [x] Phone field becomes disabled/read-only after selection - PASS - Field has [disabled] attribute
+- [x] Email field becomes disabled/read-only after selection - PASS - Field has [disabled] attribute
+- [x] Autocomplete dropdown closes after selection - PASS - No listbox visible after click
+
+### Screenshots
+- .playwright-mcp/customer-autocomplete-dropdown.png - Autocomplete dropdown showing "John Smith" with contact info
+- .playwright-mcp/customer-autocomplete-selected.png - Form after selection showing populated and disabled fields
+
+### Issues Found
+- None - Customer autocomplete selection works correctly
+
+### Notes
+- Autocomplete shows customer name on first line and "phone · email" on second line for easy identification
+- The "Existing customer selected" message provides clear feedback that an existing customer was linked
+- Clear button (X) allows user to deselect and search for a different customer or enter new customer info
+- Phone and email fields correctly disable to prevent accidental modification of existing customer data
+- The dropdown uses proper accessibility attributes (role="listbox", role="option")
+- Minimum 2 characters required before autocomplete search triggers
+- 300ms debounce prevents excessive API calls while typing
+
