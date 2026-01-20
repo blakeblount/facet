@@ -735,3 +735,56 @@ Add employee PIN modal flow to photo upload:
 - Activity section tracks employee attribution and timestamps
 - Action buttons are well-spaced at bottom of modal
 
+---
+
+## TEST: facet-a81 - Toggle Rush Status on Ticket
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/search?status=intake to access tickets via Search page
+2. Clicked on JR-0002 ticket to open TicketDetailModal
+3. Scrolled to Status & Location section - verified Rush field shows "No" with "Mark Rush" button
+4. Clicked "Mark Rush" button
+5. Employee PIN verification modal appeared with "Verify Employee" title
+6. Entered PIN "changeme" and clicked "Verify"
+7. Rush status changed - "RUSH" badge appeared in header and Status section now shows "RUSH" with "Remove Rush" button
+8. Clicked "Remove Rush" button
+9. PIN verification modal appeared again
+10. Entered PIN "changeme" and clicked "Verify"
+11. Rush status toggled back off - Status section shows "No" with "Mark Rush" button
+12. Toggled rush ON again to verify workboard display
+13. Closed modal and navigated to workboard (/)
+14. Verified JR-0002 appears at TOP of Intake lane (rush tickets first) with amber border and "RUSH" badge
+
+### Success Criteria Results
+- [x] Rush toggle button is visible for open tickets - PASS - "Mark Rush" button visible in Status & Location section
+- [x] Shows "Mark Rush" when not rush, "Remove Rush" when rush - PASS - Button text changes correctly based on rush state
+- [x] Clicking triggers PIN verification - PASS - "Verify Employee" modal appears with PIN input
+- [x] After PIN verify, rush status changes - PASS - Status updates immediately after PIN verification
+- [x] Visual indicators update (badge appears/disappears) - PASS - "RUSH" badge appears in header and Status section when rush is on
+- [x] Ticket card on workboard shows rush styling after close - PASS - Amber left border and "RUSH" badge visible on workboard
+- [x] Can toggle back to remove rush status - PASS - Successfully toggled rush off and back on
+
+### Screenshots
+- .playwright-mcp/toggle-rush-initial-state.png - Initial modal view (top section)
+- .playwright-mcp/toggle-rush-status-location-section.png - Status & Location section showing "No" with "Mark Rush" button
+- .playwright-mcp/toggle-rush-pin-modal.png - PIN verification modal
+- .playwright-mcp/toggle-rush-success-rush-on.png - Header showing "RUSH" badge after toggle on
+- .playwright-mcp/toggle-rush-remove-button-visible.png - Status section showing "RUSH" with "Remove Rush" button
+- .playwright-mcp/toggle-rush-removed-success.png - Status section after rush removed (shows "No" with "Mark Rush")
+- .playwright-mcp/toggle-rush-workboard-rush-first.png - Workboard showing JR-0002 at top with rush styling
+
+### Issues Found
+- None - Rush toggle functionality works correctly end-to-end
+
+### Notes
+- The toggle rush flow follows the same pattern as other attribution-requiring actions (add note, status change)
+- PIN verification is correctly required for both marking and removing rush status
+- Visual feedback is immediate and consistent across modal and workboard views
+- Rush tickets correctly sort to the top of the lane (FIFO with Rush override as documented in VISION.md)
+- The workboard shows rush tickets with: amber/gold left border, "RUSH" badge, and priority positioning
+- Accessing the TicketDetailModal requires using the Search page; workboard still navigates to placeholder page (known issue from facet-19y)
+- Console shows 405 error for /api/v1/photos which appears unrelated to rush toggle (possibly from photo loading)
+
