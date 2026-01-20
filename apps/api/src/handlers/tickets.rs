@@ -1,9 +1,10 @@
 //! Ticket request handlers.
 
 use axum::{
-    extract::State,
-    http::{HeaderMap, StatusCode},
-    response::IntoResponse,
+    body::Body,
+    extract::{Path, State},
+    http::{header, HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
     Json,
 };
 use chrono::NaiveDate;
@@ -18,6 +19,7 @@ use crate::repositories::{
 };
 use crate::response::ApiResponse;
 use crate::routes::AppState;
+use crate::services::pdf::{generate_receipt_pdf, ReceiptData};
 
 /// Customer info for inline creation during ticket intake.
 #[derive(Debug, Clone, Deserialize)]
@@ -188,6 +190,72 @@ pub async fn create_ticket(
     };
 
     Ok((StatusCode::CREATED, Json(ApiResponse::success(response))))
+}
+
+/// Store settings data for PDF generation.
+/// Fetched from database or uses defaults if not configured.
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct StoreSettings {
+    store_name: String,
+    store_phone: Option<String>,
+    store_address: Option<String>,
+}
+
+/// GET /api/v1/tickets/:ticket_id/receipt.pdf - Generate receipt PDF for a ticket.
+pub async fn get_receipt_pdf(
+    State(state): State<AppState>,
+    Path(ticket_id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    // 1. Find the ticket
+    let ticket = TicketRepository::find_by_id(&state.db, ticket_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Ticket not found"))?;
+
+    // 2. Find the customer
+    let customer = CustomerRepository::find_by_id(&state.db, ticket.customer_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Customer not found"))?;
+
+    // 3. Get store settings (or use defaults)
+    let store_settings = sqlx::query_as::<_, StoreSettings>(
+        r#"
+        SELECT store_name, store_phone, store_address
+        FROM store_settings
+        LIMIT 1
+        "#,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or(StoreSettings {
+        store_name: "Jewelry Store".to_string(),
+        store_phone: None,
+        store_address: None,
+    });
+
+    // 4. Generate PDF
+    let receipt_data = ReceiptData {
+        ticket,
+        customer,
+        store_name: store_settings.store_name,
+        store_phone: store_settings.store_phone,
+        store_address: store_settings.store_address,
+    };
+
+    let pdf_bytes = generate_receipt_pdf(&receipt_data)?;
+
+    // 5. Return PDF response
+    let filename = format!("receipt-{}.pdf", receipt_data.ticket.friendly_code);
+    let response = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/pdf")
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("inline; filename=\"{}\"", filename),
+        )
+        .body(Body::from(pdf_bytes))
+        .map_err(|e| AppError::server_error(format!("Failed to build response: {}", e)))?;
+
+    Ok(response)
 }
 
 #[cfg(test)]
