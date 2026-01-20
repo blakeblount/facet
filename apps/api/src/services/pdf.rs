@@ -8,6 +8,11 @@ use crate::models::Customer;
 use printpdf::*;
 use std::io::BufWriter;
 
+/// Label data for PDF generation.
+pub struct LabelData {
+    pub ticket: Ticket,
+}
+
 /// Receipt data for PDF generation.
 pub struct ReceiptData {
     pub ticket: Ticket,
@@ -288,6 +293,124 @@ fn wrap_text(text: &str, max_chars: usize) -> Vec<String> {
     lines
 }
 
+/// Generate a label PDF for a physical tag.
+///
+/// The label is 2x1 inches (50.8mm x 25.4mm) and includes:
+/// - Ticket friendly code (large, prominent)
+/// - Short item descriptor
+///
+/// This is designed to print on standard jewelry tag stock.
+pub fn generate_label_pdf(data: &LabelData) -> Result<Vec<u8>, AppError> {
+    // Create PDF document
+    // Label size: 2" x 1" = 50.8mm x 25.4mm
+    let (doc, page1, layer1) = PdfDocument::new("Repair Label", Mm(50.8), Mm(25.4), "Layer 1");
+    let current_layer = doc.get_page(page1).get_layer(layer1);
+
+    // Load built-in fonts
+    let font_bold = doc
+        .add_builtin_font(BuiltinFont::HelveticaBold)
+        .map_err(|e| AppError::server_error(format!("Failed to load bold font: {:?}", e)))?;
+    let font = doc
+        .add_builtin_font(BuiltinFont::Helvetica)
+        .map_err(|e| AppError::server_error(format!("Failed to load font: {:?}", e)))?;
+
+    // Label layout - centered content with small margins
+    // Y starts from top (25.4mm height)
+    let center_x = 25.4; // Center of the label width
+    let margin = 2.0;
+
+    // === Ticket Code (large, prominent, centered) ===
+    // Place near top of label
+    let code_y = 19.0;
+    let code_text = &data.ticket.friendly_code;
+
+    // Calculate approximate text width for centering (rough estimate: 3.5mm per char at size 14)
+    let code_width_estimate = code_text.len() as f32 * 3.5;
+    let code_x = center_x - (code_width_estimate / 2.0);
+
+    current_layer.use_text(
+        code_text,
+        14.0,
+        Mm(code_x.max(margin)),
+        Mm(code_y),
+        &font_bold,
+    );
+
+    // === Item Descriptor (smaller, below the code) ===
+    // Create a short descriptor from item_type and truncated description
+    let descriptor = create_short_descriptor(
+        data.ticket.item_type.as_deref(),
+        &data.ticket.item_description,
+    );
+
+    // Smaller font for descriptor
+    let desc_y = 10.0;
+    let desc_width_estimate = descriptor.len() as f32 * 1.8; // Approx 1.8mm per char at size 8
+    let desc_x = center_x - (desc_width_estimate / 2.0);
+
+    current_layer.use_text(&descriptor, 8.0, Mm(desc_x.max(margin)), Mm(desc_y), &font);
+
+    // === Rush indicator (if applicable) ===
+    if data.ticket.is_rush {
+        let rush_y = 4.0;
+        let rush_text = "RUSH";
+        let rush_width_estimate = rush_text.len() as f32 * 2.5;
+        let rush_x = center_x - (rush_width_estimate / 2.0);
+        current_layer.use_text(
+            rush_text,
+            10.0,
+            Mm(rush_x.max(margin)),
+            Mm(rush_y),
+            &font_bold,
+        );
+    }
+
+    // Save PDF to bytes
+    let mut buffer = BufWriter::new(Vec::new());
+    doc.save(&mut buffer)
+        .map_err(|e| AppError::server_error(format!("Failed to save PDF: {:?}", e)))?;
+
+    buffer
+        .into_inner()
+        .map_err(|e| AppError::server_error(format!("Failed to get PDF buffer: {:?}", e)))
+}
+
+/// Create a short descriptor for the label from item type and description.
+///
+/// Combines item_type (if present) with a truncated description,
+/// keeping the total length reasonable for a small label.
+fn create_short_descriptor(item_type: Option<&str>, description: &str) -> String {
+    let max_len: usize = 25; // Maximum characters for the descriptor
+
+    match item_type {
+        Some(t) if !t.is_empty() => {
+            // "Ring - Gold band with..."
+            let prefix = format!("{} - ", t);
+            let remaining = max_len.saturating_sub(prefix.len());
+
+            if remaining > 3 {
+                let truncated_desc = truncate_text(description, remaining);
+                format!("{}{}", prefix, truncated_desc)
+            } else {
+                truncate_text(t, max_len)
+            }
+        }
+        _ => truncate_text(description, max_len),
+    }
+}
+
+/// Truncate text to a maximum length, adding "..." if truncated.
+fn truncate_text(text: &str, max_len: usize) -> String {
+    if text.len() <= max_len {
+        text.to_string()
+    } else if max_len <= 3 {
+        text.chars().take(max_len).collect()
+    } else {
+        let truncated: String = text.chars().take(max_len - 3).collect();
+        format!("{}...", truncated.trim_end())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -314,5 +437,63 @@ mod tests {
         let lines = wrap_text("", 80);
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0], "");
+    }
+
+    #[test]
+    fn test_truncate_text_short() {
+        let result = truncate_text("Hello", 10);
+        assert_eq!(result, "Hello");
+    }
+
+    #[test]
+    fn test_truncate_text_exact() {
+        let result = truncate_text("Hello", 5);
+        assert_eq!(result, "Hello");
+    }
+
+    #[test]
+    fn test_truncate_text_long() {
+        let result = truncate_text("Hello World", 8);
+        assert_eq!(result, "Hello...");
+    }
+
+    #[test]
+    fn test_truncate_text_very_short_max() {
+        let result = truncate_text("Hello", 3);
+        assert_eq!(result, "Hel");
+    }
+
+    #[test]
+    fn test_create_short_descriptor_with_type() {
+        let result = create_short_descriptor(Some("Ring"), "Gold band with diamonds");
+        assert_eq!(result, "Ring - Gold band with...");
+    }
+
+    #[test]
+    fn test_create_short_descriptor_without_type() {
+        let result = create_short_descriptor(None, "Gold band with diamonds");
+        assert_eq!(result, "Gold band with diamonds");
+    }
+
+    #[test]
+    fn test_create_short_descriptor_empty_type() {
+        let result = create_short_descriptor(Some(""), "Gold band");
+        assert_eq!(result, "Gold band");
+    }
+
+    #[test]
+    fn test_create_short_descriptor_short_description() {
+        let result = create_short_descriptor(Some("Ring"), "Gold");
+        assert_eq!(result, "Ring - Gold");
+    }
+
+    #[test]
+    fn test_create_short_descriptor_long_description() {
+        let result = create_short_descriptor(
+            Some("Necklace"),
+            "Beautiful platinum chain with sapphire pendant",
+        );
+        assert!(result.len() <= 25);
+        assert!(result.ends_with("..."));
     }
 }

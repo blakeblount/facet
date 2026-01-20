@@ -50,7 +50,8 @@ pub fn api_router(state: AppState) -> Router {
             "/{ticket_id}",
             get(handlers::get_ticket).put(handlers::update_ticket),
         )
-        .route("/{ticket_id}/receipt.pdf", get(handlers::get_receipt_pdf));
+        .route("/{ticket_id}/receipt.pdf", get(handlers::get_receipt_pdf))
+        .route("/{ticket_id}/label.pdf", get(handlers::get_label_pdf));
 
     // API v1 routes
     let api_v1 = Router::new().nest("/tickets", tickets_routes);

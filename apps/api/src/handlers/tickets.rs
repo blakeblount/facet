@@ -23,7 +23,7 @@ use crate::repositories::{
 };
 use crate::response::ApiResponse;
 use crate::routes::AppState;
-use crate::services::pdf::{generate_receipt_pdf, ReceiptData};
+use crate::services::pdf::{generate_label_pdf, generate_receipt_pdf, LabelData, ReceiptData};
 
 /// Query parameters for listing tickets.
 #[derive(Debug, Clone, Deserialize)]
@@ -742,6 +742,36 @@ pub async fn get_receipt_pdf(
 
     // 5. Return PDF response
     let filename = format!("receipt-{}.pdf", receipt_data.ticket.friendly_code);
+    let response = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/pdf")
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("inline; filename=\"{}\"", filename),
+        )
+        .body(Body::from(pdf_bytes))
+        .map_err(|e| AppError::server_error(format!("Failed to build response: {}", e)))?;
+
+    Ok(response)
+}
+
+/// GET /api/v1/tickets/:ticket_id/label.pdf - Generate label PDF for a physical tag.
+pub async fn get_label_pdf(
+    State(state): State<AppState>,
+    Path(ticket_id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    // 1. Find the ticket
+    let ticket = TicketRepository::find_by_id(&state.db, ticket_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Ticket not found"))?;
+
+    // 2. Generate label PDF
+    let label_data = LabelData { ticket };
+
+    let pdf_bytes = generate_label_pdf(&label_data)?;
+
+    // 3. Return PDF response
+    let filename = format!("label-{}.pdf", label_data.ticket.friendly_code);
     let response = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "application/pdf")
