@@ -1,6 +1,6 @@
 # Facet PRD
 **Document type:** Product Requirements Document
-**Version:** 0.2 (MVP spec, clarifications added)
+**Version:** 0.3 (MVP spec, drag-and-drop added to MVP)
 **Primary platform:** Desktop-first web app (responsive; expandable to mobile later)
 
 ---
@@ -131,10 +131,16 @@ Tickets past their `promise_date` display a **red visual indicator**:
 - Overdue badge visible on card
 - Overdue tickets sort normally (no automatic priority bump) but are visually prominent
 
+### Drag-and-Drop (MVP)
+- **Drag-and-drop** to move tickets between status lanes
+- Click and drag card to target lane
+- Prompts for Employee ID on drop
+- Visual feedback: card lifts, drop zone highlights
+
 ### Phase 2 (Planned)
-- Add **drag-and-drop ordering** within each status lane.
-- Persist an explicit `queue_rank` / `sort_index`.
-- Maintain FIFO as the initial rank assignment at creation.
+- Drag-and-drop **reordering within lanes** (explicit queue_rank)
+- Persist sort_index for manual prioritization
+- Maintain FIFO as initial rank assignment at creation
 
 ---
 
@@ -419,6 +425,7 @@ If internet goes down, staff can still:
 - Receipt + tag printing
 - FIFO queue with Rush flag
 - Status transitions and notes
+- **Drag-and-drop between status lanes**
 - Quote + actual charged
 - Employee attribution (intake / work / close / edits)
 - Search and basic admin settings
@@ -428,7 +435,7 @@ If internet goes down, staff can still:
 - Customer notifications (email/SMS)
 - Customer portal
 - Payments/POS integrations
-- Drag-and-drop reorder (Phase 2)
+- Drag-and-drop reorder **within lanes** (Phase 2; cross-lane drag is MVP)
 - Multi-location / multi-tenant productization (Phase 3+)
 
 ---
