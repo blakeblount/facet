@@ -89,6 +89,9 @@ pub fn api_router(state: AppState) -> Router {
         )
         .route("/verify", post(handlers::verify_employee_pin));
 
+    // Customer routes
+    let customers_routes = Router::new().route("/", get(handlers::search_customers));
+
     // Admin routes
     let admin_routes = Router::new()
         .route("/setup", post(handlers::admin_setup))
@@ -99,6 +102,7 @@ pub fn api_router(state: AppState) -> Router {
         .nest("/tickets", tickets_routes)
         .nest("/queue", queue_route)
         .nest("/employees", employees_routes)
+        .nest("/customers", customers_routes)
         .nest("/admin", admin_routes);
 
     Router::new()

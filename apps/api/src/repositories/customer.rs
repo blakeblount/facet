@@ -2,7 +2,7 @@
 
 use crate::error::AppError;
 use crate::models::customer::{
-    CreateCustomer, Customer, CustomerSearchParams, CustomerWithTickets,
+    CreateCustomer, Customer, CustomerSearchParams, CustomerWithTicketCount, CustomerWithTickets,
 };
 use crate::models::ticket::TicketSummary;
 use sqlx::PgPool;
@@ -65,6 +65,47 @@ impl CustomerRepository {
                OR phone ILIKE $1
                OR email ILIKE $1
             ORDER BY name ASC
+            LIMIT $2
+            OFFSET $3
+            "#,
+        )
+        .bind(&search_pattern)
+        .bind(params.limit.unwrap_or(50))
+        .bind(params.offset.unwrap_or(0))
+        .fetch_all(pool)
+        .await?;
+
+        Ok(customers)
+    }
+
+    /// Search customers by name, phone, or email, including ticket count.
+    ///
+    /// Uses case-insensitive partial matching (ILIKE) across all searchable fields.
+    /// Includes the count of tickets associated with each customer.
+    /// Results are ordered by name for consistent display.
+    pub async fn search_with_ticket_count(
+        pool: &PgPool,
+        params: CustomerSearchParams,
+    ) -> Result<Vec<CustomerWithTicketCount>, AppError> {
+        let search_pattern = format!("%{}%", params.query);
+
+        let customers = sqlx::query_as::<_, CustomerWithTicketCount>(
+            r#"
+            SELECT
+                c.customer_id,
+                c.name,
+                c.phone,
+                c.email,
+                c.created_at,
+                c.updated_at,
+                COUNT(t.ticket_id) as ticket_count
+            FROM customers c
+            LEFT JOIN tickets t ON c.customer_id = t.customer_id
+            WHERE c.name ILIKE $1
+               OR c.phone ILIKE $1
+               OR c.email ILIKE $1
+            GROUP BY c.customer_id, c.name, c.phone, c.email, c.created_at, c.updated_at
+            ORDER BY c.name ASC
             LIMIT $2
             OFFSET $3
             "#,
