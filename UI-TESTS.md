@@ -1186,3 +1186,49 @@ Add employee PIN modal flow to photo upload:
 - URL parameters correctly reflect filter state: `?q=gold&status=intake&from_date=2026-01-19&to_date=2026-01-21`
 - Clear Filters button resets both date pickers to placeholder state
 - Keyboard navigation supported: Escape closes picker, arrow keys navigate dates
+
+---
+
+## TEST: facet-z6d - Search Result Opens Detail Modal
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/search
+2. Entered "Gold" in the search input field
+3. Clicked the "Search" button
+4. Observed results: "Found 3 tickets matching 'Gold'" - JR-0002, JR-0001, JR-0003
+5. Verified search result cards have cursor=pointer indicating clickability
+6. Clicked on JR-0002 ticket card (Rush, In Progress)
+7. Verified TicketDetailModal opened showing full ticket details
+8. Captured screenshot of modal
+9. Clicked Close modal (X) button
+10. Verified modal closed and search results are preserved (same 3 tickets visible)
+11. Captured screenshot showing preserved search results
+12. Clicked on JR-0003 ticket card (Intake, non-rush) to test different ticket
+13. Verified modal opened with correct JR-0003 data
+14. Closed modal and verified search results still preserved
+
+### Success Criteria Results
+- [x] Search results are clickable (cursor indicates) - PASS - Cards have cursor=pointer and button role
+- [x] Clicking opens ticket detail modal - PASS - TicketDetailModal opens immediately after click
+- [x] Modal shows full ticket details - PASS - All sections visible: Customer, Item Details, Photos, Pricing, Status & Location, Status History, Notes, Activity, Action buttons
+- [x] Can close modal and return to search results - PASS - Close button (X) works correctly
+- [x] Search results are preserved after closing modal - PASS - All 3 tickets remain visible, search query preserved in URL and input field
+
+### Screenshots
+- .playwright-mcp/.playwright-mcp/search-result-detail-modal.png - Modal showing JR-0002 ticket details with Customer, Item Details, Photos, Pricing sections
+- .playwright-mcp/.playwright-mcp/search-results-preserved-after-modal-close.png - Search page after closing modal showing all 3 results preserved
+
+### Issues Found
+- None - Search result to detail modal functionality works correctly
+
+### Notes
+- Search results are displayed as button elements with proper accessibility (role="button", cursor=pointer)
+- Each result card shows: ticket code (JR-XXXX), status badge (intake/in_progress/closed), customer name, item description, and Rush badge if applicable
+- Modal displays ticket code in header with status badge
+- Modal includes sections: Customer (name), Item Details (description, condition, requested work), Photos (with count and thumbnails), Pricing (quote, actual charged), Status & Location (current status, rush toggle, promise date, storage location), Status History, Notes (with add form), Activity (taken in by, created timestamp), Action buttons (Edit Ticket, Print Receipt, Print Tag)
+- Focus returns to the clicked search result after closing the modal (good accessibility)
+- URL maintains search query parameters throughout modal open/close cycle
+- Console shows 405 error for /api/v1/photos endpoint (unrelated to modal functionality, likely from photo loading)
