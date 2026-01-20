@@ -1474,3 +1474,68 @@ Add employee PIN modal flow to photo upload:
 - Optimistic updates provide immediate visual feedback while API call completes
 - Dragging to the same lane (no status change) is silently ignored - no PIN modal shown
 - The implementation correctly handles drag events with `ondragover`, `ondragenter`, `ondragleave`, and `ondrop`
+
+---
+
+## TEST: facet-gcb - Drag-Drop Optimistic UI Update
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/ (workboard)
+2. Set up JavaScript instrumentation to track:
+   - PIN verification time
+   - Ticket DOM update time
+   - API call start/end times
+   - Lane count changes
+3. Initial state: JR-0003 in "In Progress" lane (count: 1), "Ready for Pickup" lane (count: 0)
+4. Dragged JR-0003 from "In Progress" to "Ready for Pickup"
+5. PIN verification modal appeared
+6. Recorded pin verify time, entered PIN "changeme"
+7. Clicked "Verify" button
+8. Observed ticket moved immediately to "Ready for Pickup" lane
+9. Collected timing data to verify optimistic update behavior
+10. Verified no loading spinners were displayed during the operation
+
+### Success Criteria Results
+- [x] After PIN verification, ticket moves IMMEDIATELY (before server response) - PASS
+  - Ticket DOM update occurred at 34201.60ms
+  - API call started at 34200.30ms (1.3ms before DOM update)
+  - API call ended at 34211.10ms (9.5ms after DOM update)
+  - **Ticket moved BEFORE API response returned (optimistic!)**
+- [x] No loading spinner blocks the UI - PASS - Zero loading indicators found in DOM
+- [x] Lane counts update immediately - PASS
+  - Before: In Progress=1, Ready for Pickup=0
+  - After: In Progress=0, Ready for Pickup=1
+  - Counts updated in same DOM mutation as ticket move
+- [x] UI feels responsive and snappy - PASS - Total API call duration was only 10.80ms; optimistic update felt instantaneous
+- [x] Ticket stays in new position after server confirms - PASS - Verified ticket remains in "Ready for Pickup" after API completion
+
+### Timing Analysis
+```
+Pin verify clicked:  ~25566ms (baseline)
+API call started:    34200.30ms
+Ticket DOM updated:  34201.60ms (+1.3ms after API start)
+API call ended:      34211.10ms (+10.8ms after API start)
+
+Key finding: DOM updated 9.5ms BEFORE server response
+```
+
+### Screenshots
+- .playwright-mcp/optimistic-ui-after-drop.png - Workboard showing JR-0003 successfully moved to "Ready for Pickup" lane
+
+### Issues Found
+- None - Optimistic UI works correctly
+
+### Technical Notes
+- The optimistic update implementation uses a `SvelteMap` called `optimisticMoves` to track pending moves
+- The `lanes` computed property applies optimistic moves on top of server data
+- After PIN verification succeeds:
+  1. `optimisticMoves.set()` is called immediately (line 157 in +page.svelte)
+  2. Modal closes (line 160)
+  3. API call is made with `await changeTicketStatus()` (line 165)
+  4. On success, `invalidateAll()` refreshes from server (line 167)
+  5. On failure, optimistic move is reverted (lines 169-174)
+  6. Finally block clears the optimistic move (lines 176-177)
+- This pattern ensures the UI updates instantly while still syncing with the server
