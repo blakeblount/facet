@@ -2612,3 +2612,60 @@ Main Content:
 - Status filter includes all workflow states plus "Archived" option
 - Date pickers use consistent "Start date" / "End date" placeholder text
 - Search functionality is discoverable with descriptive heading and instructions
+
+---
+
+## TEST: facet-lpb - Theme toggle - Arcane
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/admin
+2. Verified initial state: Imperial theme active (data-theme="imperial", Imperial button has active class, localStorage="imperial")
+3. Clicked Arcane theme button
+4. Verified immediate theme application:
+   - data-theme attribute changed to "arcane"
+   - Arcane button received active class
+   - Imperial button lost active class
+   - CSS variables updated to Arcane palette (background: #2d2a24, primary: #b8860b)
+   - localStorage updated to "arcane"
+5. Refreshed page to test persistence
+6. Verified after refresh: theme remained "arcane", Arcane button still active, localStorage still "arcane"
+7. Clicked Imperial button to verify theme switching back works
+8. Verified Imperial theme restored: Imperial button active, Arcane button lost active state
+
+### Success Criteria Results
+- [x] Arcane theme button is clickable - PASS - Button responds to click events
+- [x] Clicking applies Arcane theme immediately - PASS - data-theme attribute changes instantly, CSS variables update
+- [x] Button shows active/selected state - PASS - Arcane button receives `.active` class when selected
+- [x] Previous theme button loses active state - PASS - Imperial button loses `.active` class when Arcane selected
+- [x] Theme persists after page refresh - PASS - localStorage persistence verified, theme restored on reload
+- [x] Color scheme matches Arcane theme definition - PASS - Verified CSS variables: --color-background: #2d2a24 (aged parchment), --color-primary: #b8860b (polished brass), --color-accent: #4a9b9b (arcane teal), --font-heading: 'Press Start 2P' (pixel font)
+
+### Screenshots
+- None captured (all states verified programmatically via JavaScript evaluation)
+
+### Technical Details
+Theme switching implementation (`apps/web/src/lib/stores/theme.svelte.ts`):
+- Theme stored in reactive Svelte 5 state with `$state<ThemeState>`
+- `set()` method updates state, saves to localStorage, and applies to DOM via `data-theme` attribute
+- `init()` loads from localStorage on app startup
+- Available themes: 'imperial' | 'arcane'
+
+Arcane theme CSS variables (`apps/web/src/lib/themes/arcane.css`):
+- Background: #2d2a24 (aged parchment dark)
+- Surface: #3d3830 (dark leather)
+- Primary: #b8860b (polished brass)
+- Accent: #4a9b9b (arcane teal)
+- Font Heading: 'Press Start 2P', 'VT323', monospace (pixel fonts)
+- Border radius: 0-2px (sharp corners for pixel aesthetic)
+
+### Issues Found
+- None - Arcane theme toggle functions correctly
+
+### Notes
+- Theme toggle uses the same pattern as Imperial theme (previously tested in facet-dqo)
+- Both themes now confirmed working with proper persistence
+- Arcane theme provides a distinct fantasy/pixel aesthetic with darker color palette
+- Pixel fonts ('Press Start 2P') load from Google Fonts for heading elements
