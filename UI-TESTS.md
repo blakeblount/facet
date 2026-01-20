@@ -1923,3 +1923,69 @@ The read-only state is implemented in TicketDetailModal.svelte using the `isTick
 - Print functionality is preserved intentionally - stores may need receipts/tags even after closure
 - The UI clearly indicates the closed state via the "Closed" badge in the header
 - Status history shows the complete audit trail including the final transition to Closed
+
+---
+
+## TEST: facet-6f7 - Invalid PIN Shows Error Message
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173 (workboard)
+2. Clicked "+ New" button in Intake lane
+3. Filled out intake form:
+   - Customer Name: "Test PIN Customer"
+   - Item Description: "Test ring"
+   - Condition Notes: "Good condition"
+   - Requested Work: "Clean and polish"
+   - Storage Location: "Safe Drawer 1"
+   - Uploaded test photo
+4. Clicked "Create & Print" button
+5. PIN verification modal appeared with title "Enter Employee PIN"
+6. Entered invalid PIN "0000"
+7. Clicked "Verify" button
+8. Observed error message: "Invalid PIN. Please try again."
+9. PIN input field remained visible with "0000" value
+10. Cleared input and entered valid PIN "changeme"
+11. Clicked "Verify" button again
+12. Ticket created successfully (JR-0004) and appeared in Intake lane
+
+### Success Criteria Results
+- [x] Invalid PIN does NOT complete the action - PASS
+  - After entering "0000" and clicking Verify, the action was blocked
+  - PIN modal remained open, no ticket was created
+- [x] Error message appears - PASS
+  - Error message "Invalid PIN. Please try again." displayed in an alert element
+  - Message is clear, user-friendly, and instructive
+- [x] PIN input field remains visible for retry - PASS
+  - Textbox remained visible with the invalid PIN value
+  - User could clear and re-enter a new PIN
+- [x] Can try again with correct PIN - PASS
+  - After entering "changeme", the action completed successfully
+  - Ticket JR-0004 was created and appeared in Intake lane
+- [x] Error message is clear and user-friendly - PASS
+  - "Invalid PIN. Please try again." is concise and actionable
+- [x] No employee information is leaked in error message - PASS
+  - Error does not reveal whether PIN exists, is wrong format, or which employee it might belong to
+
+### Security Analysis
+- API endpoint `/api/v1/employees/verify` tested with multiple invalid PINs
+- All invalid inputs return same error: `{"code":"INVALID_PIN","message":"Invalid PIN"}`
+- No distinction between:
+  - Short PIN ("1")
+  - Wrong format ("wrongpin123")
+  - Non-existent ("0000")
+- This prevents PIN enumeration attacks
+
+### Screenshots
+- None captured (test passed all criteria)
+
+### Issues Found
+None - All security and UX requirements met.
+
+### Notes
+- The PIN verification modal is implemented in `apps/web/src/lib/components/EmployeeIdModal.svelte`
+- Error handling uses `ApiClientError.isCode('INVALID_PIN')` to detect and display the appropriate message
+- The modal remains open after invalid PIN, allowing retry without re-entering form data
+- Valid PIN returns employee info (id, name, role) which is used for attribution
