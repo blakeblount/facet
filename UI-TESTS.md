@@ -1632,3 +1632,61 @@ Key finding: DOM updated 9.5ms BEFORE server response
 - Search results display all relevant ticket information: code, status badge, customer name, and item description
 - The search appears to be using full-text search across multiple fields including customer name
 - URL correctly updates with search query: `/search?q=john+smith&status=&from_date=&to_date=`
+
+---
+
+## TEST: facet-djk - Drag-Drop Error Handling (Network Failure)
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/ (workboard)
+2. Recorded initial state:
+   - Intake: 0 tickets
+   - In Progress: 0 tickets
+   - Waiting on Parts: 1 ticket (JR-0002, Rush, Test Customer, Gold ring)
+   - Ready for Pickup: 1 ticket (JR-0003)
+3. Set up Playwright network interception to abort status change API requests (simulating network failure)
+4. Dragged JR-0002 from "Waiting on Parts" to "In Progress" lane
+5. PIN verification modal appeared
+6. Entered valid PIN "changeme" and clicked Verify
+7. Network request was intercepted and aborted (simulating "Failed to fetch" error)
+8. Observed error toast message appeared: "Failed to fetch"
+9. Verified JR-0002 reverted back to "Waiting on Parts" lane
+10. Verified lane counts remained at original values (Waiting on Parts: 1, In Progress: 0)
+11. Dismissed the error toast by clicking "Dismiss" button
+12. Removed network interception (simulating network recovery)
+13. Attempted drag operation again with same ticket
+14. Entered PIN and verified - operation succeeded this time
+15. JR-0002 moved to "In Progress" lane (count: 1)
+16. Restored ticket to original "Waiting on Parts" lane for future tests
+
+### Success Criteria Results
+- [x] Network error is caught gracefully - PASS - Error was caught in try/catch block, no crash or hang
+- [x] Error toast/message appears (e.g., "Failed to update status") - PASS - Error toast displayed "Failed to fetch" message with red styling
+- [x] Ticket REVERTS to original lane - PASS - JR-0002 returned to "Waiting on Parts" lane after network error
+- [x] Lane counts revert to original values - PASS
+  - Before error: Waiting on Parts=1, In Progress=0
+  - After error: Waiting on Parts=1, In Progress=0 (unchanged/reverted)
+- [x] User can try again when network is restored - PASS - After removing network interception, the same drag operation succeeded
+- [x] App does not crash or hang - PASS - Application remained fully responsive throughout the test
+
+### Screenshots
+- .playwright-mcp/network-error-drag-drop.png - Error toast displayed after network failure, ticket reverted to original lane
+- .playwright-mcp/network-error-retry-success.png - Successful retry after network restored, ticket in new lane
+
+### Issues Found
+- None - Network error handling works correctly
+
+### Technical Notes
+- Network failure was simulated using Playwright's `page.route()` with `route.abort('failed')`
+- The error handling flow works as follows:
+  1. Optimistic update is applied immediately after PIN verification (lines 156-157 in +page.svelte)
+  2. API call is made to change ticket status (line 165)
+  3. On network failure, catch block logs error and sets `statusUpdateError` (lines 168-174)
+  4. Finally block clears the optimistic move, reverting the UI (lines 176-177)
+- Error message is displayed via a red-styled toast at the top of the workboard
+- Toast includes a "Dismiss" button for user acknowledgment
+- The implementation correctly handles the "Failed to fetch" TypeError that occurs on network failures
+- Console shows both the network error and the logged error message: "Failed to update ticket status: TypeError: Failed to fetch"
