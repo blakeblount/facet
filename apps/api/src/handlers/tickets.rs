@@ -14,13 +14,13 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::models::{
-    CreateCustomer, CreateFieldHistory, CreateStatusHistory, CreateTicket, CreateTicketPhoto,
-    Customer, QueueTicket, Ticket, TicketFilters, TicketPhoto as TicketPhotoModel,
-    TicketSearchParams, TicketStatus, UpdateTicket,
+    CreateCustomer, CreateFieldHistory, CreateStatusHistory, CreateTicket, CreateTicketNote,
+    CreateTicketPhoto, Customer, QueueTicket, Ticket, TicketFilters, TicketNote as TicketNoteModel,
+    TicketPhoto as TicketPhotoModel, TicketSearchParams, TicketStatus, UpdateTicket,
 };
 use crate::repositories::{
     CustomerRepository, EmployeeRepository, FieldHistoryRepository, StatusHistoryRepository,
-    TicketPhotoRepository, TicketRepository,
+    TicketNoteRepository, TicketPhotoRepository, TicketRepository,
 };
 use crate::response::ApiResponse;
 use crate::routes::AppState;
@@ -1341,6 +1341,70 @@ pub async fn toggle_rush(
 }
 
 // =============================================================================
+// POST /tickets/:ticket_id/notes - Add Note
+// =============================================================================
+
+/// Request body for adding a note to a ticket.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AddNoteRequest {
+    /// The note content (required)
+    pub content: String,
+}
+
+/// Response for a successfully created note.
+#[derive(Debug, Clone, Serialize)]
+pub struct AddNoteResponse {
+    /// The created note
+    #[serde(flatten)]
+    pub note: TicketNoteModel,
+}
+
+/// POST /api/v1/tickets/:ticket_id/notes - Add an internal note to a ticket.
+///
+/// Notes are append-only - no edit or delete available.
+/// Requires X-Employee-ID header for attribution.
+pub async fn add_note(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(ticket_id): Path<Uuid>,
+    Json(body): Json<AddNoteRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // 1. Extract and validate employee ID from header
+    let employee_id = extract_employee_id(&headers)?;
+
+    // Verify employee exists and is active
+    let employee = EmployeeRepository::find_active_by_id(&state.db, employee_id)
+        .await?
+        .ok_or_else(|| AppError::validation("Employee not found or inactive"))?;
+
+    // 2. Verify ticket exists
+    let _ticket = TicketRepository::find_by_id(&state.db, ticket_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Ticket not found"))?;
+
+    // 3. Validate content is not empty
+    if body.content.trim().is_empty() {
+        return Err(AppError::validation("Note content cannot be empty"));
+    }
+
+    // 4. Create the note
+    let note = TicketNoteRepository::create(
+        &state.db,
+        CreateTicketNote {
+            ticket_id,
+            content: body.content,
+            created_by: employee.employee_id,
+        },
+    )
+    .await?;
+
+    // 5. Return created note
+    let response = AddNoteResponse { note };
+
+    Ok((StatusCode::CREATED, Json(ApiResponse::success(response))))
+}
+
+// =============================================================================
 // POST /tickets/:ticket_id/photos - Upload Photo
 // =============================================================================
 
@@ -2203,5 +2267,55 @@ mod tests {
         assert!(json.contains("\"ticket_id\":\"550e8400-e29b-41d4-a716-446655440000\""));
         assert!(json.contains("\"is_rush\":true"));
         assert!(json.contains("\"previous_is_rush\":false"));
+    }
+
+    #[test]
+    fn test_add_note_request_deserialize() {
+        let json = r#"{"content": "Customer called about the repair"}"#;
+        let request: AddNoteRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.content, "Customer called about the repair");
+    }
+
+    #[test]
+    fn test_add_note_request_empty_content() {
+        let json = r#"{"content": ""}"#;
+        let request: AddNoteRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.content, "");
+    }
+
+    #[test]
+    fn test_add_note_request_missing_content() {
+        let json = r#"{}"#;
+        let result: Result<AddNoteRequest, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_add_note_request_multiline_content() {
+        let json = r#"{"content": "Line 1\nLine 2\nLine 3"}"#;
+        let request: AddNoteRequest = serde_json::from_str(json).unwrap();
+        assert!(request.content.contains('\n'));
+    }
+
+    #[test]
+    fn test_add_note_response_serialization() {
+        use chrono::TimeZone;
+
+        let note = TicketNoteModel {
+            note_id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
+            ticket_id: Uuid::parse_str("660e8400-e29b-41d4-a716-446655440000").unwrap(),
+            content: "Customer mentioned ring has sentimental value".to_string(),
+            created_by: Uuid::parse_str("770e8400-e29b-41d4-a716-446655440000").unwrap(),
+            created_at: Utc.with_ymd_and_hms(2025, 1, 1, 12, 0, 0).unwrap(),
+        };
+
+        let response = AddNoteResponse { note };
+        let json = serde_json::to_string(&response).unwrap();
+
+        // Due to #[serde(flatten)], fields are at the top level
+        assert!(json.contains("\"note_id\":\"550e8400-e29b-41d4-a716-446655440000\""));
+        assert!(json.contains("\"ticket_id\":\"660e8400-e29b-41d4-a716-446655440000\""));
+        assert!(json.contains("\"content\":\"Customer mentioned ring has sentimental value\""));
+        assert!(json.contains("\"created_by\":\"770e8400-e29b-41d4-a716-446655440000\""));
     }
 }

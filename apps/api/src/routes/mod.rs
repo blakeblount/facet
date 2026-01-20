@@ -70,6 +70,7 @@ pub fn api_router(state: AppState) -> Router {
         .route("/{ticket_id}/status", post(handlers::change_status))
         .route("/{ticket_id}/close", post(handlers::close_ticket))
         .route("/{ticket_id}/rush", post(handlers::toggle_rush))
+        .route("/{ticket_id}/notes", post(handlers::add_note))
         .route("/{ticket_id}/photos", post(handlers::upload_photo))
         .route(
             "/{ticket_id}/photos/{photo_id}",
