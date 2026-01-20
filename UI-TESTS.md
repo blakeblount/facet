@@ -519,3 +519,71 @@ The lightbox implementation in TicketDetailModal.svelte (lines 56-192, 862-928) 
 - The lightbox code appears correctly implemented - this is purely an integration issue
 - Consider creating a dedicated UI test for the lightbox once integrated
 
+---
+
+## TEST: facet-9k9 - Add Photo to Existing Ticket
+**Date:** 2026-01-20
+**Status:** FAIL
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/search?status=intake to access tickets via Search page (workboard uses placeholder detail page)
+2. Search loaded 3 tickets in Intake status
+3. Clicked on JR-0003 ticket card to open TicketDetailModal
+4. Modal opened successfully showing ticket details with 1 existing photo
+5. Verified "Add Photo" button visible in Photos section header (Photos (1))
+6. Clicked "Add Photo" button - upload modal opened
+7. Modal showed "Select photos to upload" with dropzone ("Up to 9 images, max 10.0 MB each")
+8. Clicked upload area, file chooser opened
+9. Selected test image file (add-photo-test.png)
+10. File appeared as thumbnail with filename and remove button
+11. "Upload" button changed to "Upload (1)" (enabled)
+12. Clicked "Upload (1)" button
+13. Upload failed with error: "X-Employee-ID header is required"
+
+### Success Criteria Results
+- [x] "Add Photo" button is visible (when < 10 photos and not closed) - PASS - Button visible with icon
+- [x] Clicking opens file upload dialog or modal - PASS - "Add Photos" modal opens with PhotoUpload component
+- [x] Can select one or more photos - PASS - Selected file shows as thumbnail preview
+- [ ] Upload progress is shown - FAIL - Progress bar exists in code but not reached due to error before upload starts
+- [ ] After upload, new photo appears in the grid - FAIL - Upload never completes
+- [ ] Photo count updates - FAIL - Cannot verify (upload fails)
+- [ ] If 10 photos reached, "Add Photo" button hides - NOT TESTED - Ticket only has 1 photo; logic exists at line 506 in component
+
+### Screenshots
+- .playwright-mcp/add-photo-modal-before.png - Ticket detail showing Photos (1) with Add Photo button
+- .playwright-mcp/add-photo-upload-modal.png - Upload modal before file selection
+- .playwright-mcp/add-photo-file-selected.png - Upload modal with file selected, showing thumbnail
+- .playwright-mcp/add-photo-error-employee-required.png - Error message after clicking Upload
+
+### Issues Found
+- **HIGH**: Photo upload fails with "X-Employee-ID header is required" error
+  - Root cause: The Add Photo flow in TicketDetailModal does not include Employee PIN verification
+  - The `uploadTicketPhoto()` API function requires `currentEmployeeId` to be set via `setCurrentEmployee()`
+  - Comparison: Other actions requiring attribution (toggle rush, add note) correctly show EmployeeIdModal first
+  - Fix needed: Add PIN verification flow before calling `handleUploadPhotos()` (similar to rush toggle and notes)
+  - Location: apps/web/src/lib/components/TicketDetailModal.svelte, handleUploadPhotos function (line 206)
+
+### Code Analysis
+The component has the infrastructure for PIN verification:
+- `EmployeeIdModal` is imported and used for rush toggle (lines 334-357) and notes (lines 360-387)
+- Each flow: 1) Sets pending action, 2) Shows modal, 3) On success callback sets employee and performs action
+- Photo upload (lines 206-236) skips this pattern - directly calls API without PIN verification
+- The API requires X-Employee-ID header (api.ts line 741-743) which is only set when `currentEmployeeId` is truthy
+
+### Workaround
+None available via UI. Would require setting employee ID programmatically before upload.
+
+### Recommended Fix
+Add employee PIN modal flow to photo upload:
+1. Add state: `showUploadEmployeeModal`, `pendingUploadFiles`
+2. When user clicks "Upload", store files and show EmployeeIdModal
+3. On PIN success, call `setCurrentEmployee(employee.employee_id)` then `handleUploadPhotos()`
+4. Clear employee after upload completes
+
+### Notes
+- The ticket detail modal is fully functional and well-designed for the search page
+- Workboard still navigates to placeholder page instead of using the modal (facet-19y related)
+- Full-text search (`?search=...`) returns 500 database error, but status filter (`?status=intake`) works correctly
+- Test discovered a real bug that blocks the Add Photo feature from working
+
