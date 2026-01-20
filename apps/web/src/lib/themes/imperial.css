@@ -1,0 +1,308 @@
+/**
+ * Imperial Theme - Clean, sophisticated American luxury aesthetic
+ *
+ * Think high-end jewelry store display cases. Premium and trustworthy.
+ *
+ * Color Palette:
+ * - Background: Warm white #FAFAF8
+ * - Surface: Pure white #FFFFFF
+ * - Primary: Deep navy #1E3A5F
+ * - Accent: Muted gold #C9A227
+ * - Text: Charcoal #2D2D2D
+ */
+
+/* Google Fonts imports */
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* =============================================================================
+   Imperial Theme Variables
+   ============================================================================= */
+
+[data-theme='imperial'] {
+	/* Typography */
+	--font-heading: 'Playfair Display', Georgia, 'Times New Roman', serif;
+	--font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+	--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+
+	/* Primary palette */
+	--color-primary: #1e3a5f;
+	--color-primary-dark: #152a45;
+	--color-primary-light: #2a4d7a;
+
+	/* Accent - Muted gold */
+	--color-accent: #c9a227;
+	--color-accent-dark: #a8871e;
+	--color-accent-light: #d4b43d;
+
+	/* Backgrounds */
+	--color-background: #fafaf8;
+	--color-surface: #ffffff;
+	--color-foreground: #2d2d2d;
+	--color-muted: #6b6b6b;
+	--color-border: #e8e6e1;
+
+	/* Legacy aliases for compatibility */
+	--color-bg: #fafaf8;
+	--color-bg-card: #ffffff;
+	--color-text: #2d2d2d;
+	--color-text-muted: #6b6b6b;
+
+	/* Status colors - Imperial palette */
+	--color-status-intake: #6b5b95;
+	--color-status-in-progress: #1e3a5f;
+	--color-status-waiting: #d4a017;
+	--color-status-ready: #2d5a3d;
+	--color-status-closed: #6b6b6b;
+
+	/* Legacy status aliases */
+	--color-intake: #6b5b95;
+	--color-in-progress: #1e3a5f;
+	--color-waiting: #d4a017;
+	--color-ready: #2d5a3d;
+	--color-closed: #6b6b6b;
+
+	/* Semantic colors */
+	--color-success: #2d5a3d;
+	--color-warning: #d4a017;
+	--color-error: #8b2635;
+
+	/* Rush indicator - Gold for premium feel */
+	--color-rush: #c9a227;
+
+	/* Shadows - Subtle for sophisticated look */
+	--shadow-sm: 0 1px 2px 0 rgb(45 45 45 / 0.04);
+	--shadow-md: 0 4px 8px -1px rgb(45 45 45 / 0.06), 0 2px 4px -2px rgb(45 45 45 / 0.04);
+	--shadow-lg: 0 12px 24px -4px rgb(45 45 45 / 0.08), 0 4px 8px -4px rgb(45 45 45 / 0.04);
+
+	/* Border radius - Rounded but not too playful (4-8px per spec) */
+	--radius-sm: 0.25rem;
+	--radius-md: 0.375rem;
+	--radius-lg: 0.5rem;
+
+	/* Spacing scale */
+	--spacing-xs: 0.25rem;
+	--spacing-sm: 0.5rem;
+	--spacing-md: 1rem;
+	--spacing-lg: 1.5rem;
+	--spacing-xl: 2rem;
+	--spacing-header: 60px;
+
+	/* Legacy spacing aliases */
+	--space-xs: 0.25rem;
+	--space-sm: 0.5rem;
+	--space-md: 1rem;
+	--space-lg: 1.5rem;
+	--space-xl: 2rem;
+
+	/* Layout */
+	--max-width-content: 1600px;
+	--max-content-width: 1600px;
+	--header-height: 60px;
+
+	/* Transitions */
+	--transition-fast: 150ms ease;
+	--transition-normal: 200ms ease;
+}
+
+/* =============================================================================
+   Imperial Theme Styles
+   ============================================================================= */
+
+[data-theme='imperial'] {
+	font-family: var(--font-sans);
+	color: var(--color-text);
+	background-color: var(--color-bg);
+}
+
+/* Typography - Serif headings per spec */
+[data-theme='imperial'] h1,
+[data-theme='imperial'] h2,
+[data-theme='imperial'] h3,
+[data-theme='imperial'] h4,
+[data-theme='imperial'] h5,
+[data-theme='imperial'] h6 {
+	font-family: var(--font-heading);
+	font-weight: 600;
+	letter-spacing: -0.01em;
+}
+
+/* Monospace for ticket codes */
+[data-theme='imperial'] .ticket-code,
+[data-theme='imperial'] code,
+[data-theme='imperial'] pre {
+	font-family: var(--font-mono);
+}
+
+/* Header styling */
+[data-theme='imperial'] .app-header {
+	background-color: var(--color-primary);
+	box-shadow: var(--shadow-md);
+}
+
+/* Logo with gold accent */
+[data-theme='imperial'] .logo-text {
+	font-family: var(--font-heading);
+	letter-spacing: 0.02em;
+}
+
+/* Links */
+[data-theme='imperial'] a {
+	color: var(--color-primary);
+}
+
+[data-theme='imperial'] a:hover {
+	color: var(--color-primary-dark);
+}
+
+/* Buttons - Primary with navy, accent with gold */
+[data-theme='imperial'] .btn-primary {
+	background-color: var(--color-primary);
+	color: white;
+	border: none;
+	box-shadow: var(--shadow-sm);
+}
+
+[data-theme='imperial'] .btn-primary:hover {
+	background-color: var(--color-primary-dark);
+}
+
+[data-theme='imperial'] .btn-accent {
+	background-color: var(--color-accent);
+	color: white;
+	border: none;
+}
+
+[data-theme='imperial'] .btn-accent:hover {
+	background-color: var(--color-accent-dark);
+}
+
+/* Cards - Clean with subtle shadows */
+[data-theme='imperial'] .card {
+	background-color: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	box-shadow: var(--shadow-sm);
+}
+
+[data-theme='imperial'] .card:hover {
+	box-shadow: var(--shadow-md);
+}
+
+/* Status badges */
+[data-theme='imperial'] .status-intake {
+	background-color: var(--color-intake);
+	color: white;
+}
+
+[data-theme='imperial'] .status-in-progress {
+	background-color: var(--color-in-progress);
+	color: white;
+}
+
+[data-theme='imperial'] .status-waiting {
+	background-color: var(--color-waiting);
+	color: white;
+}
+
+[data-theme='imperial'] .status-ready {
+	background-color: var(--color-ready);
+	color: white;
+}
+
+[data-theme='imperial'] .status-closed {
+	background-color: var(--color-closed);
+	color: white;
+}
+
+/* Rush indicator - Gold badge for premium feel */
+[data-theme='imperial'] .is-rush {
+	border-left: 4px solid var(--color-rush);
+}
+
+[data-theme='imperial'] .rush-badge {
+	background-color: var(--color-rush);
+	color: white;
+	font-weight: 600;
+}
+
+/* Form inputs */
+[data-theme='imperial'] input,
+[data-theme='imperial'] textarea,
+[data-theme='imperial'] select {
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	background-color: var(--color-surface);
+	color: var(--color-text);
+}
+
+[data-theme='imperial'] input:focus,
+[data-theme='imperial'] textarea:focus,
+[data-theme='imperial'] select:focus {
+	outline: none;
+	border-color: var(--color-primary);
+	box-shadow: 0 0 0 3px rgb(30 58 95 / 0.1);
+}
+
+/* Modal styling */
+[data-theme='imperial'] .modal {
+	background-color: var(--color-surface);
+	border-radius: var(--radius-lg);
+	box-shadow: var(--shadow-lg);
+}
+
+[data-theme='imperial'] .modal-backdrop {
+	background-color: rgb(45 45 45 / 0.4);
+}
+
+/* Table styling */
+[data-theme='imperial'] table {
+	border-collapse: collapse;
+}
+
+[data-theme='imperial'] th {
+	font-family: var(--font-heading);
+	font-weight: 600;
+	text-align: left;
+	border-bottom: 2px solid var(--color-border);
+}
+
+[data-theme='imperial'] td {
+	border-bottom: 1px solid var(--color-border);
+}
+
+[data-theme='imperial'] tr:hover td {
+	background-color: rgb(250 250 248 / 0.5);
+}
+
+/* Workboard lanes */
+[data-theme='imperial'] .lane {
+	background-color: var(--color-background);
+	border-radius: var(--radius-lg);
+}
+
+[data-theme='imperial'] .lane-header {
+	font-family: var(--font-heading);
+	font-weight: 600;
+	color: var(--color-text);
+	border-bottom: 2px solid var(--color-border);
+}
+
+/* Error/overdue states */
+[data-theme='imperial'] .overdue {
+	border-color: var(--color-error);
+	background-color: rgb(139 38 53 / 0.05);
+}
+
+[data-theme='imperial'] .error-text {
+	color: var(--color-error);
+}
+
+/* Success states */
+[data-theme='imperial'] .success-text {
+	color: var(--color-success);
+}
+
+/* Warning states */
+[data-theme='imperial'] .warning-text {
+	color: var(--color-warning);
+}
