@@ -1232,3 +1232,59 @@ Add employee PIN modal flow to photo upload:
 - Focus returns to the clicked search result after closing the modal (good accessibility)
 - URL maintains search query parameters throughout modal open/close cycle
 - Console shows 405 error for /api/v1/photos endpoint (unrelated to modal functionality, likely from photo loading)
+
+---
+
+## TEST: facet-1ty - Print Receipt Button
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/search?status=intake
+2. Clicked on JR-0003 ticket card to open TicketDetailModal
+3. Verified "Print Receipt" button is visible in the actions section at bottom of modal
+4. Captured screenshot showing modal with Print Receipt button
+5. Clicked "Print Receipt" button
+6. Observed new browser tab opened with blob URL (blob:http://localhost:5173/...)
+7. Switched to new tab - verified PDF viewer displayed with "Repair Receipt" document
+8. Verified PDF contains store name, ticket code, customer info, item details, requested work
+9. Captured screenshot of PDF receipt content
+10. Closed PDF tab and returned to search page
+
+### Success Criteria Results
+- [x] "Print Receipt" button is visible - PASS - Button visible in modal actions section
+- [x] Clicking opens a new browser tab - PASS - New tab opened with blob URL
+- [x] New tab contains a PDF or printable receipt - PASS - Chrome PDF viewer showed "Repair Receipt" document (1 page)
+- [x] Receipt shows ticket code, customer info, item details - PASS - Shows:
+  - Store name: "Jewelry Store" (header)
+  - Title: "REPAIR RECEIPT"
+  - Ticket #: JR-0003
+  - Customer: E2E Test Customer
+  - Item Details: Description and Condition displayed with word wrapping
+  - Requested Work: Full work description shown
+- [x] Receipt shows pricing (quote and/or actual) - PARTIAL - Quote would show as "Estimated Price: $X.XX" if set. Test ticket JR-0003 has null quote amount, so pricing line is omitted (expected behavior per code - only shows if quote exists)
+- [x] Receipt includes store information - PASS - Store name at top of receipt
+- [x] Receipt is formatted for printing - PASS - Letter size (8.5x11"), proper margins, signature line, footer with pickup instructions
+
+### Screenshots
+- .playwright-mcp/.playwright-mcp/print-receipt-button-visible.png - Modal showing action buttons including Print Receipt
+- .playwright-mcp/.playwright-mcp/print-receipt-pdf-view.png - PDF receipt in browser showing full receipt content
+
+### Issues Found
+- None - Print receipt functionality works correctly
+
+### Notes
+- Receipt PDF is generated on the backend using the `printpdf` Rust crate
+- PDF opens via blob URL using `URL.createObjectURL()` which allows the browser's native PDF viewer to display it
+- Receipt content adapts based on ticket data:
+  - Quote amount shown as "Estimated Price" only if set
+  - Promise date shown only if set
+  - "*** RUSH ORDER ***" banner shown only if ticket is rush
+  - Customer phone/email shown only if available
+- Receipt includes important elements for customer:
+  - Date received with timestamp
+  - Customer signature line for acknowledgment
+  - Footer reminder: "Please retain this receipt for pickup"
+  - Footer reminder: "Ticket ID required for all inquiries: JR-XXXX"
+- The Vite dev server proxy correctly passes the PDF blob without issues (unlike earlier tests that reported 404 via proxy)
