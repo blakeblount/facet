@@ -4,8 +4,8 @@
 	import Input from './Input.svelte';
 	import {
 		getTicket,
-		getReceiptPdfUrl,
-		getLabelPdfUrl,
+		fetchReceiptPdf,
+		fetchLabelPdf,
 		closeTicket,
 		type TicketDetailResponse,
 		type TicketStatus
@@ -39,6 +39,11 @@
 	let employeePin: string = $state('');
 	let closeError: string | null = $state(null);
 	let isClosing: boolean = $state(false);
+
+	// Print state
+	let isPrintingReceipt: boolean = $state(false);
+	let isPrintingTag: boolean = $state(false);
+	let printError: string | null = $state(null);
 
 	// Fetch ticket when ticketId changes and modal is open
 	$effect(() => {
@@ -123,16 +128,38 @@
 		onEdit?.();
 	}
 
-	function handlePrintReceipt() {
-		if (!ticket) return;
-		const url = getReceiptPdfUrl(ticket.ticket_id);
-		window.open(url, '_blank');
+	async function handlePrintReceipt() {
+		if (!ticket || isPrintingReceipt) return;
+		isPrintingReceipt = true;
+		printError = null;
+		try {
+			const blob = await fetchReceiptPdf(ticket.ticket_id);
+			const url = URL.createObjectURL(blob);
+			window.open(url, '_blank');
+			// Clean up the object URL after a delay to allow the new tab to load
+			setTimeout(() => URL.revokeObjectURL(url), 60000);
+		} catch (e) {
+			printError = e instanceof Error ? e.message : 'Failed to load receipt PDF';
+		} finally {
+			isPrintingReceipt = false;
+		}
 	}
 
-	function handlePrintTag() {
-		if (!ticket) return;
-		const url = getLabelPdfUrl(ticket.ticket_id);
-		window.open(url, '_blank');
+	async function handlePrintTag() {
+		if (!ticket || isPrintingTag) return;
+		isPrintingTag = true;
+		printError = null;
+		try {
+			const blob = await fetchLabelPdf(ticket.ticket_id);
+			const url = URL.createObjectURL(blob);
+			window.open(url, '_blank');
+			// Clean up the object URL after a delay to allow the new tab to load
+			setTimeout(() => URL.revokeObjectURL(url), 60000);
+		} catch (e) {
+			printError = e instanceof Error ? e.message : 'Failed to load label PDF';
+		} finally {
+			isPrintingTag = false;
+		}
 	}
 
 	function openCloseModal() {
@@ -452,12 +479,22 @@
 
 			<!-- Action Buttons -->
 			<section class="detail-section actions-section">
+				{#if printError}
+					<div class="print-error">
+						<span class="print-error-message">{printError}</span>
+						<button class="print-error-dismiss" onclick={() => (printError = null)}>Dismiss</button>
+					</div>
+				{/if}
 				<div class="actions-row">
 					{#if !isTicketClosed()}
 						<Button variant="secondary" onclick={handleEditTicket}>Edit Ticket</Button>
 					{/if}
-					<Button variant="secondary" onclick={handlePrintReceipt}>Print Receipt</Button>
-					<Button variant="secondary" onclick={handlePrintTag}>Print Tag</Button>
+					<Button variant="secondary" onclick={handlePrintReceipt} loading={isPrintingReceipt}>
+						Print Receipt
+					</Button>
+					<Button variant="secondary" onclick={handlePrintTag} loading={isPrintingTag}>
+						Print Tag
+					</Button>
 					{#if canCloseTicket()}
 						<Button variant="primary" onclick={openCloseModal}>Close Ticket</Button>
 					{/if}
@@ -785,6 +822,38 @@
 		margin-top: var(--space-lg, 1.5rem);
 		padding-top: var(--space-md, 1rem);
 		border-top: 1px solid var(--color-border, #e2e8f0);
+	}
+
+	.print-error {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-sm, 0.5rem);
+		padding: var(--space-sm, 0.5rem) var(--space-md, 1rem);
+		margin-bottom: var(--space-sm, 0.5rem);
+		background-color: var(--color-error-bg, #fef2f2);
+		border: 1px solid var(--color-error-border, #fecaca);
+		border-radius: var(--radius-md, 0.5rem);
+	}
+
+	.print-error-message {
+		font-size: 0.875rem;
+		color: var(--color-rush, #ef4444);
+	}
+
+	.print-error-dismiss {
+		padding: var(--space-xs, 0.25rem) var(--space-sm, 0.5rem);
+		font-size: 0.75rem;
+		color: var(--color-rush, #ef4444);
+		background: none;
+		border: 1px solid var(--color-rush, #ef4444);
+		border-radius: var(--radius-sm, 0.25rem);
+		cursor: pointer;
+		transition: background-color var(--transition-fast, 150ms ease);
+	}
+
+	.print-error-dismiss:hover {
+		background-color: var(--color-error-bg, #fef2f2);
 	}
 
 	.actions-row {
