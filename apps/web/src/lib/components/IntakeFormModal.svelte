@@ -1,17 +1,25 @@
 <script lang="ts">
+	import { SvelteMap } from 'svelte/reactivity';
 	import Modal from './Modal.svelte';
 	import Button from './Button.svelte';
 	import Input from './Input.svelte';
 	import Select from './Select.svelte';
 	import Textarea from './Textarea.svelte';
 	import PhotoUpload from './PhotoUpload.svelte';
+	import EmployeeIdModal from './EmployeeIdModal.svelte';
 	import {
 		listStorageLocations,
 		listCustomers,
+		createTicket,
+		uploadTicketPhoto,
+		setCurrentEmployee,
+		getReceiptPdfUrl,
+		ApiClientError,
 		type StorageLocationSummary,
 		type CreateTicketRequest,
 		type InlineCustomer,
-		type Customer
+		type Customer,
+		type VerifyPinResponse
 	} from '$lib/services/api';
 
 	interface Props {
@@ -20,7 +28,7 @@
 		/** Callback when modal closes */
 		onClose: () => void;
 		/** Callback when form is successfully submitted */
-		onSuccess?: (ticketId: string) => void;
+		onSuccess?: (ticketId: string, friendlyCode: string) => void;
 	}
 
 	let { open, onClose, onSuccess }: Props = $props();
@@ -61,6 +69,10 @@
 
 	// Form submission state
 	let isSubmitting = $state(false);
+	let showEmployeeModal = $state(false);
+	let submissionError = $state('');
+	let photoUploadProgress = new SvelteMap<number, number>();
+	let successMessage = $state('');
 
 	// Fetch storage locations when modal opens
 	$effect(() => {
@@ -194,6 +206,10 @@
 
 		// Reset submission state
 		isSubmitting = false;
+		showEmployeeModal = false;
+		submissionError = '';
+		photoUploadProgress.clear();
+		successMessage = '';
 	}
 
 	function validateForm(): boolean {
@@ -276,15 +292,62 @@
 			return;
 		}
 
-		// Build the request object (for display to integrating code)
-		const request = buildCreateTicketRequest();
-		console.log('Form data ready for submission:', request);
-		console.log('Photos to upload:', photos);
+		// Clear any previous errors
+		submissionError = '';
 
-		// Note: Actual submission will be implemented in a separate task
-		// This modal focuses on the form structure and validation
-		// For now, just close the modal to demonstrate the flow
-		onSuccess?.('placeholder-ticket-id');
+		// Show employee PIN modal
+		showEmployeeModal = true;
+	}
+
+	function handleEmployeeModalClose() {
+		showEmployeeModal = false;
+	}
+
+	async function handleEmployeeVerified(employee: VerifyPinResponse) {
+		showEmployeeModal = false;
+		isSubmitting = true;
+		submissionError = '';
+
+		// Set the employee ID for API requests
+		setCurrentEmployee(employee.employee_id);
+
+		try {
+			// Build and submit the ticket
+			const request = buildCreateTicketRequest();
+			const response = await createTicket(request);
+
+			// Upload photos
+			const totalPhotos = photos.length;
+			for (let i = 0; i < totalPhotos; i++) {
+				const file = photos[i];
+				await uploadTicketPhoto(response.ticket_id, file, (progress) => {
+					photoUploadProgress.set(i, progress);
+				});
+			}
+
+			// Open receipt PDF in new tab
+			const receiptUrl = getReceiptPdfUrl(response.ticket_id);
+			window.open(receiptUrl, '_blank');
+
+			// Show success message
+			successMessage = `Ticket ${response.friendly_code} created successfully!`;
+
+			// Call success callback and close after a brief delay to show the message
+			setTimeout(() => {
+				onSuccess?.(response.ticket_id, response.friendly_code);
+				onClose();
+			}, 1500);
+		} catch (err) {
+			if (err instanceof ApiClientError) {
+				submissionError = err.message || 'Failed to create ticket. Please try again.';
+			} else {
+				submissionError = 'An unexpected error occurred. Please try again.';
+			}
+			console.error('Failed to create ticket:', err);
+		} finally {
+			isSubmitting = false;
+			photoUploadProgress.clear();
+		}
 	}
 
 	function handleClose() {
@@ -509,13 +572,66 @@
 			/>
 		</section>
 
+		<!-- Success Message -->
+		{#if successMessage}
+			<div class="success-message" role="status">
+				<svg class="success-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
+					<path
+						d="M10 0C4.48 0 0 4.48 0 10C0 15.52 4.48 20 10 20C15.52 20 20 15.52 20 10C20 4.48 15.52 0 10 0ZM8 15L3 10L4.41 8.59L8 12.17L15.59 4.58L17 6L8 15Z"
+						fill="currentColor"
+					/>
+				</svg>
+				<span>{successMessage}</span>
+			</div>
+		{/if}
+
+		<!-- Submission Error -->
+		{#if submissionError}
+			<div class="submission-error" role="alert">
+				<svg class="error-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
+					<path
+						d="M10 0C4.48 0 0 4.48 0 10C0 15.52 4.48 20 10 20C15.52 20 20 15.52 20 10C20 4.48 15.52 0 10 0ZM11 15H9V13H11V15ZM11 11H9V5H11V11Z"
+						fill="currentColor"
+					/>
+				</svg>
+				<span>{submissionError}</span>
+			</div>
+		{/if}
+
+		<!-- Photo Upload Progress -->
+		{#if isSubmitting && photoUploadProgress.size > 0}
+			<div class="upload-progress">
+				<span class="upload-label">Uploading photos...</span>
+				<div class="progress-bar">
+					<div
+						class="progress-fill"
+						style="width: {Math.round(
+							([...photoUploadProgress.values()].reduce((a, b) => a + b, 0) /
+								(photos.length * 100)) *
+								100
+						)}%"
+					></div>
+				</div>
+			</div>
+		{/if}
+
 		<!-- Form Actions -->
 		<div class="form-actions">
 			<Button variant="secondary" onclick={handleClose} disabled={isSubmitting}>Cancel</Button>
-			<Button variant="primary" type="submit" loading={isSubmitting}>Create Ticket</Button>
+			<Button variant="primary" type="submit" loading={isSubmitting} disabled={!!successMessage}
+				>Create & Print</Button
+			>
 		</div>
 	</form>
 </Modal>
+
+<!-- Employee PIN Modal -->
+<EmployeeIdModal
+	open={showEmployeeModal}
+	title="Enter Employee PIN"
+	onClose={handleEmployeeModalClose}
+	onSuccess={handleEmployeeVerified}
+/>
 
 <style>
 	.intake-form {
@@ -847,6 +963,66 @@
 		gap: var(--space-sm, 0.5rem);
 		padding-top: var(--space-md, 1rem);
 		border-top: 1px solid var(--color-border, #e2e8f0);
+	}
+
+	/* Success message */
+	.success-message {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm, 0.5rem);
+		padding: var(--space-md, 1rem);
+		background-color: rgba(34, 197, 94, 0.1);
+		border: 1px solid var(--color-success, #22c55e);
+		border-radius: var(--radius-md, 0.5rem);
+		color: var(--color-success, #22c55e);
+		font-size: 0.875rem;
+		font-weight: 500;
+	}
+
+	.success-icon {
+		flex-shrink: 0;
+	}
+
+	/* Submission error */
+	.submission-error {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm, 0.5rem);
+		padding: var(--space-md, 1rem);
+		background-color: rgba(239, 68, 68, 0.1);
+		border: 1px solid var(--color-rush, #ef4444);
+		border-radius: var(--radius-md, 0.5rem);
+		color: var(--color-rush, #ef4444);
+		font-size: 0.875rem;
+	}
+
+	.error-icon {
+		flex-shrink: 0;
+	}
+
+	/* Upload progress */
+	.upload-progress {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-xs, 0.25rem);
+	}
+
+	.upload-label {
+		font-size: 0.75rem;
+		color: var(--color-text-muted, #64748b);
+	}
+
+	.progress-bar {
+		height: 4px;
+		background-color: var(--color-border, #e2e8f0);
+		border-radius: 2px;
+		overflow: hidden;
+	}
+
+	.progress-fill {
+		height: 100%;
+		background-color: var(--color-primary, #1e40af);
+		transition: width var(--transition-fast, 150ms ease);
 	}
 
 	/* Responsive adjustments */
