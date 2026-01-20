@@ -2042,3 +2042,86 @@ None - The offline indicator works as designed.
 - The indicator also supports "Syncing..." state (with spinner) and "X pending" state (with cloud icon)
 - Styling varies by state: red for offline, blue for syncing, yellow for pending
 - The component is conditionally rendered only when there's something to show (offline, syncing, or pending items)
+
+---
+
+## TEST: facet-20c - UI Test: Offline ticket creation queues for sync
+**Date:** 2026-01-20
+**Status:** BLOCKED
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to workboard at http://localhost:5173
+2. Confirmed workboard loaded with existing tickets (JR-0002, JR-0003)
+3. Clicked "+ New" button to open intake form modal
+4. Used Playwright context.setOffline(true) to simulate network disconnection
+5. Observed offline banner appeared in intake form: "You're offline - Ticket will be saved locally and synced when back online"
+6. Observed offline indicator appeared in header showing "Offline" with wifi-off icon
+7. Filled all required form fields:
+   - Customer Name: "Offline Test Customer"
+   - Item Description: "18k gold wedding band"
+   - Condition Notes: "Ring has minor scratches on exterior"
+   - Requested Work: "Polish and resize from size 10 to size 9"
+   - Storage Location: "Safe Drawer 1" (dropdown worked - options were cached)
+   - Uploaded test photo (add-note-initial-state.png)
+8. Clicked "Create & Print" button
+9. Employee PIN modal appeared with title "Enter Employee PIN"
+10. Entered PIN "1234" and clicked "Verify"
+11. **BLOCKED**: PIN verification failed with error "An error occurred. Please try again."
+    - Console showed: `ERR_INTERNET_DISCONNECTED` for `/api/v1/employees/verify`
+12. Set network back online (context.setOffline(false))
+13. Attempted PIN verification again while online
+14. Got "Invalid PIN" (turns out the test PIN is "changeme", not "1234")
+
+### Success Criteria Results
+- [x] Offline banner appears in intake form when offline - **PASS**
+  - Banner shows: "You're offline - Ticket will be saved locally and synced when back online"
+  - Uses orange/yellow styling to indicate warning state
+- [x] Form can still be filled out while offline - **PASS**
+  - All text fields accept input while offline
+  - Storage location dropdown works (options were cached at page load)
+  - Photo upload works (processed client-side)
+- [ ] Submission succeeds (queued locally) - **BLOCKED**
+  - Cannot reach this step because PIN verification requires network
+- [ ] Success message indicates offline mode - **BLOCKED**
+  - Cannot reach this step
+- [ ] Ticket is queued for sync - **BLOCKED**
+  - Cannot reach this step
+- [ ] Sync notification appears indicating pending items - **BLOCKED**
+  - Cannot reach this step
+- [ ] When back online, ticket syncs to server - **BLOCKED**
+  - Cannot reach this step
+- [ ] Ticket appears on workboard after sync - **BLOCKED**
+  - Cannot reach this step
+
+### Screenshots
+- offline-intake-form.png - Shows intake form with offline banner visible
+- offline-pin-verification-failure.png - Shows PIN modal with error after offline verification attempt
+
+### Issues Found
+**CRITICAL: PIN verification blocks offline ticket creation**
+
+The offline ticket creation feature cannot be used because:
+1. The `EmployeeIdModal` component always calls `verifyEmployeePin()` API endpoint
+2. This endpoint requires network connectivity
+3. There is no offline PIN cache or fallback mechanism
+4. When offline, PIN verification fails with a generic error message
+
+**Root Cause Analysis:**
+- `EmployeeIdModal.svelte` (line 55): `const employee = await verifyEmployeePin(pin);`
+- This makes an API call to `/api/v1/employees/verify`
+- No offline fallback exists for PIN verification
+- The `IntakeFormModal.svelte` has offline queueing logic (lines 320-345) but it's never reached because PIN verification fails first
+
+**Recommended Fix:**
+1. Cache employee data in IndexedDB after successful online PIN verification
+2. In `EmployeeIdModal`, check `offlineStore.isOffline` before API call
+3. If offline, verify PIN against cached hash (requires storing hash or using secure offline verification)
+4. Or: Trust the user while offline and defer verification to sync time
+
+### Notes
+- The offline infrastructure is well-designed (IndexedDB queue, sync service, offline store)
+- The `syncQueueStore` service is fully implemented and ready to queue tickets
+- The blocking issue is specifically the PIN verification step
+- This is a design gap rather than a bug - PIN verification was not designed for offline use
+- Consider security implications of offline PIN caching (hash storage, replay attacks)
