@@ -1831,3 +1831,95 @@ The validation is implemented in TicketDetailModal.svelte in the `handleAmountSu
 - Custom validation handles edge cases like negative amounts
 - The validation error styling is consistent with other forms in the application
 - Close ticket flow properly requires valid amount before employee PIN step
+
+---
+
+## TEST: facet-yx2 - Closed Ticket Read-Only State
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/search
+2. Filtered by "Closed" status using the status dropdown
+3. Clicked Search to apply the filter
+4. Found ticket JR-0001 in Closed status
+5. Clicked on ticket to open TicketDetailModal
+6. Verified all read-only criteria in the modal
+7. Tested Print Receipt button - confirmed it opens PDF in new tab
+8. Tested Print Tag button - confirmed it opens PDF in new tab
+
+### Success Criteria Results
+- [x] Add Note textarea/button is disabled or hidden - PASS
+  - Notes section only shows the list of existing notes (2 notes displayed)
+  - No add note form, textarea, or "Add Note" button is present
+  - Code confirms: `{#if !isTicketClosed()}` wraps the add-note-form (line 708)
+- [x] Add Photo button is disabled or hidden - PASS
+  - Photos section shows "No photos attached" message only
+  - No "Add Photo" button is present in the section header or empty state
+  - Code confirms: `{#if !isTicketClosed() && ticket.photos.length < 10}` wraps add-photo-btn (line 514)
+- [x] Rush toggle is disabled or hidden - PASS
+  - Rush row only shows static text "No"
+  - No "Mark Rush" or "Remove Rush" button is present
+  - Code confirms: `{#if !isTicketClosed()}` wraps rush-toggle-btn (line 612)
+- [x] Edit button is disabled or hidden - PASS
+  - Edit Ticket button is NOT present in the actions section
+  - Only Print Receipt and Print Tag buttons are visible
+  - Code confirms: `{#if !isTicketClosed()}` wraps Edit Ticket button (line 793)
+- [x] Close Ticket button is not shown - PASS
+  - Close Ticket button is NOT present
+  - This is correct because `canCloseTicket()` only returns true for 'ready_for_pickup' status
+  - Code confirms: `{#if canCloseTicket()}` wraps Close Ticket button (line 802)
+- [x] Print buttons still work (Receipt, Tag) - PASS
+  - Print Receipt button clicked - opens blob URL in new tab with PDF
+  - Print Tag button clicked - opens blob URL in new tab with PDF
+  - Both buttons remain functional and accessible for closed tickets
+- [x] All data is visible but not editable - PASS
+  - Customer section: Name, Phone, Email all visible
+  - Item Details: Description, Condition, Requested Work all visible
+  - Photos: Count shown (0), message "No photos attached"
+  - Pricing: Quote (—), Actual Charged ($145.50) visible
+  - Status & Location: Current Status (Closed), Rush (No), Promise Date (—), Storage Location (Safe Drawer 1)
+  - Status History: 3 entries visible with timestamps and employee names
+  - Notes: 2 notes visible with content, timestamps, and employee names
+  - Activity: Taken in by, Closed by, Created, Closed timestamps all visible
+- [x] Status clearly shows "Closed" - PASS
+  - Header shows "Closed" badge next to ticket code JR-0001
+  - Status & Location section shows "Current Status: Closed"
+
+### Screenshots
+- .playwright-mcp/closed-ticket-detail-modal.png - Full modal view showing Closed badge and read-only state
+- .playwright-mcp/closed-ticket-action-buttons.png - Modal showing only Print Receipt and Print Tag buttons
+
+### Issues Found
+None - All read-only functionality works correctly.
+
+### Code Analysis
+The read-only state is implemented in TicketDetailModal.svelte using the `isTicketClosed()` helper function:
+- Line 337-339: `function isTicketClosed(): boolean { return ticket?.status === 'closed' || ticket?.status === 'archived'; }`
+- This function gates all editable actions:
+  - Add Note form (line 708)
+  - Add Photo button (line 514, 551)
+  - Rush toggle button (line 612)
+  - Edit Ticket button (line 793)
+- Close Ticket button uses separate `canCloseTicket()` which only returns true for 'ready_for_pickup' status
+- Print buttons are outside all conditional blocks, ensuring they always work
+
+### Read-Only Elements Summary
+| Element | Closed Ticket | Non-Closed Ticket |
+|---------|---------------|-------------------|
+| Add Note form | Hidden | Visible |
+| Add Photo button | Hidden | Visible (if < 10 photos) |
+| Rush toggle | Hidden | Visible |
+| Edit Ticket button | Hidden | Visible |
+| Close Ticket button | Hidden | Visible (only if ready_for_pickup) |
+| Print Receipt | Visible | Visible |
+| Print Tag | Visible | Visible |
+| All data fields | Read-only display | Read-only display |
+
+### Notes
+- The implementation correctly distinguishes between "closed" and "archived" statuses, treating both as read-only
+- The `canCloseTicket()` function is separate from `isTicketClosed()` for proper workflow enforcement
+- Print functionality is preserved intentionally - stores may need receipts/tags even after closure
+- The UI clearly indicates the closed state via the "Closed" badge in the header
+- Status history shows the complete audit trail including the final transition to Closed
