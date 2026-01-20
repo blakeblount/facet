@@ -359,7 +359,25 @@ impl TicketRepository {
 
         let tickets = sqlx::query_as::<_, QueueTicket>(
             r#"
-            SELECT DISTINCT
+            WITH matching_tickets AS (
+                SELECT DISTINCT t.ticket_id
+                FROM tickets t
+                JOIN customers c ON t.customer_id = c.customer_id
+                LEFT JOIN ticket_notes n ON t.ticket_id = n.ticket_id
+                WHERE (
+                    t.friendly_code ILIKE $1
+                    OR t.item_type ILIKE $1
+                    OR t.item_description ILIKE $1
+                    OR t.condition_notes ILIKE $1
+                    OR t.requested_work ILIKE $1
+                    OR c.name ILIKE $1
+                    OR c.phone ILIKE $1
+                    OR c.email ILIKE $1
+                    OR n.content ILIKE $1
+                )
+                AND ($2::text[] IS NULL OR t.status::text = ANY($2))
+            )
+            SELECT
                 t.ticket_id,
                 t.friendly_code,
                 t.customer_id,
@@ -380,19 +398,7 @@ impl TicketRepository {
                 END as is_overdue
             FROM tickets t
             JOIN customers c ON t.customer_id = c.customer_id
-            LEFT JOIN ticket_notes n ON t.ticket_id = n.ticket_id
-            WHERE (
-                t.friendly_code ILIKE $1
-                OR t.item_type ILIKE $1
-                OR t.item_description ILIKE $1
-                OR t.condition_notes ILIKE $1
-                OR t.requested_work ILIKE $1
-                OR c.name ILIKE $1
-                OR c.phone ILIKE $1
-                OR c.email ILIKE $1
-                OR n.content ILIKE $1
-            )
-            AND ($2::text[] IS NULL OR t.status::text = ANY($2))
+            WHERE t.ticket_id IN (SELECT ticket_id FROM matching_tickets)
             ORDER BY
                 -- Prioritize exact friendly_code matches
                 CASE WHEN t.friendly_code ILIKE $1 THEN 0 ELSE 1 END,

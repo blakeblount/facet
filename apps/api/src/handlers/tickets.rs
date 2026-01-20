@@ -1530,16 +1530,22 @@ pub async fn upload_photo(
 
     if use_local_storage {
         // Local file storage fallback for development
-        let local_dir = std::path::Path::new("uploads").join("tickets").join(ticket.ticket_id.to_string());
-        std::fs::create_dir_all(&local_dir)
-            .map_err(|e| AppError::server_error(format!("Failed to create upload directory: {}", e)))?;
+        let local_dir = std::path::Path::new("uploads")
+            .join("tickets")
+            .join(ticket.ticket_id.to_string());
+        std::fs::create_dir_all(&local_dir).map_err(|e| {
+            AppError::server_error(format!("Failed to create upload directory: {}", e))
+        })?;
 
         let file_path = local_dir.join(format!("{}.{}", photo_id, extension));
         std::fs::write(&file_path, &data)
             .map_err(|e| AppError::server_error(format!("Failed to save photo: {}", e)))?;
 
         // Return a local file path as the URL (for dev purposes)
-        url = format!("/uploads/tickets/{}/{}.{}", ticket.ticket_id, photo_id, extension);
+        url = format!(
+            "/uploads/tickets/{}/{}.{}",
+            ticket.ticket_id, photo_id, extension
+        );
     } else {
         // S3 storage
         let storage = state.storage.as_ref().unwrap();

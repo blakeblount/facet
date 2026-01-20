@@ -940,3 +940,49 @@ Add employee PIN modal flow to photo upload:
 - Minimum 2 characters required before autocomplete search triggers
 - 300ms debounce prevents excessive API calls while typing
 
+
+---
+
+## TEST: facet-8r7 - Search by Ticket Code
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/search
+2. Observed search page with input field, status filter dropdown, and date pickers
+3. Entered ticket code "JR-0002" in the search field
+4. Clicked the "Search" button
+5. Observed search results showing "Found 1 ticket matching 'JR-0002'"
+6. Verified result card displays ticket code (JR-0002), status badge (intake), and customer name (Test Customer)
+7. Verified RUSH badge is displayed on the result card
+8. Clicked on the result card
+9. Verified ticket detail modal opens showing full ticket information
+
+### Bug Fix Required
+- **Issue:** Search functionality was returning 500 error due to SQL syntax issue
+- **Root cause:** The search query used `SELECT DISTINCT` with an `ORDER BY` expression (CASE WHEN) that wasn't in the select list, which violates PostgreSQL requirements
+- **Fix:** Refactored the query to use a CTE (WITH clause) to find distinct matching ticket IDs first, then join back to get full ticket data with proper ordering
+- **File changed:** apps/api/src/repositories/ticket.rs (lines 360-411)
+
+### Success Criteria Results
+- [x] Entering ticket code and searching returns results - PASS - Search returns "Found 1 ticket matching 'JR-0002'"
+- [x] Matching ticket appears in results list - PASS - JR-0002 ticket displayed
+- [x] Result shows ticket code, status badge, customer name - PASS - Shows "JR-0002", "intake" status badge, "Test Customer"
+- [x] Results count is accurate - PASS - Shows "Found 1 ticket"
+- [x] Result card is clickable - PASS - Card has button role and cursor: pointer
+- [x] Clicking opens ticket detail modal - PASS - Modal opens showing full ticket details including customer info, item details, photos, pricing, status history, and notes
+
+### Screenshots
+- Search results showing JR-0002 match with status badge and customer name
+- Ticket detail modal showing all sections after clicking result
+
+### Issues Found
+- **FIXED:** Critical bug where ticket search returned 500 error due to PostgreSQL DISTINCT/ORDER BY constraint
+
+### Notes
+- The search is case-insensitive and searches across multiple fields (friendly_code, item_type, item_description, condition_notes, requested_work, customer name/phone/email, and notes)
+- Rush tickets are prioritized in results, followed by FIFO ordering
+- Results include status badge with appropriate color coding (intake = blue)
+- The fix required restructuring the SQL query from a simple SELECT DISTINCT to a CTE-based approach
+- All API tests pass after the fix (204 tests)
