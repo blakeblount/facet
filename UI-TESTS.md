@@ -1539,3 +1539,48 @@ Key finding: DOM updated 9.5ms BEFORE server response
   5. On failure, optimistic move is reverted (lines 169-174)
   6. Finally block clears the optimistic move (lines 176-177)
 - This pattern ensures the UI updates instantly while still syncing with the server
+
+---
+
+## TEST: facet-umb - Drag-Drop PIN Verification Required (Cancel Flow)
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/ (workboard)
+2. Recorded initial state:
+   - Intake: 0 tickets
+   - In Progress: 0 tickets
+   - Waiting on Parts: 1 ticket (JR-0002, Rush)
+   - Ready for Pickup: 1 ticket (JR-0003)
+3. Dragged JR-0002 from "Waiting on Parts" to "In Progress" lane
+4. PIN verification modal appeared with "Verify Employee PIN" title
+5. Clicked "Cancel" button instead of entering PIN
+6. Verified modal closed
+7. Verified JR-0002 returned to "Waiting on Parts" lane
+8. Verified lane counts remained unchanged
+9. Repeated test with "X" (Close modal) button - same result
+
+### Success Criteria Results
+- [x] Dropping ticket ALWAYS triggers PIN modal - PASS - "Verify Employee PIN" modal appeared immediately after drop
+- [x] Cannot complete move without entering PIN - PASS - Move was not completed when Cancel was clicked
+- [x] Canceling PIN modal cancels the move - PASS - Modal closed and ticket did not move to target lane
+- [x] Ticket returns to original lane after cancel - PASS - JR-0002 remained in "Waiting on Parts" lane exactly where it started
+- [x] Lane counts remain unchanged after cancel - PASS
+  - Before cancel: Waiting on Parts=1, In Progress=0
+  - After cancel: Waiting on Parts=1, In Progress=0 (unchanged)
+
+### Screenshots
+- .playwright-mcp/pin-cancel-ticket-returned.png - Workboard showing JR-0002 back in "Waiting on Parts" after cancel
+
+### Issues Found
+- None - PIN verification cancel flow works correctly
+
+### Technical Notes
+- Both close mechanisms work identically:
+  - "Cancel" button in the modal footer
+  - "X" (Close modal) button in the modal header
+- The implementation properly handles the cancel case by not applying any optimistic update
+- No API call is made when PIN verification is cancelled
+- Employee attribution requirement is enforced - status changes cannot occur without PIN verification
