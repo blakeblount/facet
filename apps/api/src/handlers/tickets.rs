@@ -1460,11 +1460,8 @@ pub async fn upload_photo(
         )));
     }
 
-    // 4. Get the storage client (required for upload)
-    let storage = state
-        .storage
-        .as_ref()
-        .ok_or_else(|| AppError::server_error("Storage not configured"))?;
+    // 4. Check if storage is available (S3 or local fallback)
+    let use_local_storage = state.storage.is_none();
 
     // 5. Extract file from multipart form
     let mut file_data: Option<(String, Vec<u8>)> = None;
@@ -1527,12 +1524,35 @@ pub async fn upload_photo(
     };
     let storage_key = format!("tickets/{}/{}.{}", ticket.ticket_id, photo_id, extension);
 
-    // 7. Upload to S3
+    // 7. Upload to storage (S3 or local fallback)
     let file_size = data.len() as i32;
-    storage
-        .upload(&storage_key, data, &content_type)
-        .await
-        .map_err(|e| AppError::server_error(format!("Failed to upload photo: {}", e)))?;
+    let url: String;
+
+    if use_local_storage {
+        // Local file storage fallback for development
+        let local_dir = std::path::Path::new("uploads").join("tickets").join(ticket.ticket_id.to_string());
+        std::fs::create_dir_all(&local_dir)
+            .map_err(|e| AppError::server_error(format!("Failed to create upload directory: {}", e)))?;
+
+        let file_path = local_dir.join(format!("{}.{}", photo_id, extension));
+        std::fs::write(&file_path, &data)
+            .map_err(|e| AppError::server_error(format!("Failed to save photo: {}", e)))?;
+
+        // Return a local file path as the URL (for dev purposes)
+        url = format!("/uploads/tickets/{}/{}.{}", ticket.ticket_id, photo_id, extension);
+    } else {
+        // S3 storage
+        let storage = state.storage.as_ref().unwrap();
+        storage
+            .upload(&storage_key, data, &content_type)
+            .await
+            .map_err(|e| AppError::server_error(format!("Failed to upload photo: {}", e)))?;
+
+        url = storage
+            .get_signed_url(&storage_key, None)
+            .await
+            .map_err(|e| AppError::server_error(format!("Failed to generate signed URL: {}", e)))?;
+    }
 
     // 8. Create database record
     let photo = TicketPhotoRepository::create(
@@ -1546,12 +1566,6 @@ pub async fn upload_photo(
         },
     )
     .await?;
-
-    // 9. Generate signed URL for accessing the photo
-    let url = storage
-        .get_signed_url(&storage_key, None)
-        .await
-        .map_err(|e| AppError::server_error(format!("Failed to generate signed URL: {}", e)))?;
 
     // 10. Return response
     let response = UploadPhotoResponse { photo, url };

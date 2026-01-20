@@ -17,6 +17,7 @@ use axum::{
     Router,
 };
 use sqlx::postgres::PgPool;
+use tower_http::services::ServeDir;
 
 use crate::handlers;
 
@@ -62,18 +63,18 @@ pub fn api_router(state: AppState) -> Router {
             get(handlers::list_tickets).post(handlers::create_ticket),
         )
         .route(
-            "/{ticket_id}",
+            "/:ticket_id",
             get(handlers::get_ticket).put(handlers::update_ticket),
         )
-        .route("/{ticket_id}/receipt.pdf", get(handlers::get_receipt_pdf))
-        .route("/{ticket_id}/label.pdf", get(handlers::get_label_pdf))
-        .route("/{ticket_id}/status", post(handlers::change_status))
-        .route("/{ticket_id}/close", post(handlers::close_ticket))
-        .route("/{ticket_id}/rush", post(handlers::toggle_rush))
-        .route("/{ticket_id}/notes", post(handlers::add_note))
-        .route("/{ticket_id}/photos", post(handlers::upload_photo))
+        .route("/:ticket_id/receipt.pdf", get(handlers::get_receipt_pdf))
+        .route("/:ticket_id/label.pdf", get(handlers::get_label_pdf))
+        .route("/:ticket_id/status", post(handlers::change_status))
+        .route("/:ticket_id/close", post(handlers::close_ticket))
+        .route("/:ticket_id/rush", post(handlers::toggle_rush))
+        .route("/:ticket_id/notes", post(handlers::add_note))
+        .route("/:ticket_id/photos", post(handlers::upload_photo))
         .route(
-            "/{ticket_id}/photos/{photo_id}",
+            "/:ticket_id/photos/:photo_id",
             delete(handlers::delete_photo),
         );
 
@@ -87,7 +88,7 @@ pub fn api_router(state: AppState) -> Router {
             get(handlers::list_employees).post(handlers::create_employee),
         )
         .route(
-            "/{employee_id}",
+            "/:employee_id",
             put(handlers::update_employee).delete(handlers::delete_employee),
         )
         .route("/verify", post(handlers::verify_employee_pin));
@@ -95,7 +96,7 @@ pub fn api_router(state: AppState) -> Router {
     // Customer routes
     let customers_routes = Router::new()
         .route("/", get(handlers::search_customers))
-        .route("/{customer_id}", get(handlers::get_customer));
+        .route("/:customer_id", get(handlers::get_customer));
 
     // Admin routes
     let admin_routes = Router::new()
@@ -115,7 +116,7 @@ pub fn api_router(state: AppState) -> Router {
             "/",
             get(handlers::list_locations).post(handlers::create_location),
         )
-        .route("/{location_id}", put(handlers::update_location));
+        .route("/:location_id", put(handlers::update_location));
 
     // API v1 routes
     let api_v1 = Router::new()
@@ -130,5 +131,7 @@ pub fn api_router(state: AppState) -> Router {
     Router::new()
         .route("/health", axum::routing::get(health::health_check))
         .nest("/api/v1", api_v1)
+        // Serve uploaded files from local storage (dev only)
+        .nest_service("/uploads", ServeDir::new("uploads"))
         .with_state(state)
 }
