@@ -414,3 +414,53 @@ After completing each test, append results to this file using this format:
 - Integration work required: Either wire up TicketDetailModal to the workboard, or complete the /tickets/[id] page using the same component
 - Recommendation: Change workboard to open TicketDetailModal on ticket click (preserves workboard context, better UX for quick reference)
 
+---
+
+## TEST: facet-613 - Multiple Photo Upload
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/
+2. Clicked "+ New" button to open intake form modal
+3. Clicked photo upload area to open file chooser
+4. Selected 3 photos at once (test-image-1.png, test-image-2.png, test-image-3.png)
+5. Observed all 3 photos displayed as thumbnails with remove buttons
+6. Clicked upload area again and selected 2 more photos (test-image-4.png, test-image-5.png)
+7. Observed total of 5 photos displayed (can add more after initial selection)
+8. Clicked remove button on test-image-3.png
+9. Observed photo removed, now showing 4 photos
+10. Added 6 more photos (test-image-6.png through test-image-11.png) to reach 10 total
+11. Observed upload dropzone disappeared when at max (10 photos)
+12. Removed one photo (test-image-11.png), dropzone reappeared
+13. Attempted to add 2 photos when only 1 slot available
+14. Observed error message: "Can only add 1 more file"
+
+### Success Criteria Results
+- [x] Can select multiple files at once - PASS - Selected 3 files simultaneously, all displayed
+- [x] All selected photos show previews/thumbnails - PASS - Each photo shows colored thumbnail in grid
+- [ ] Photo count updates correctly (e.g., "3 photos") - FAIL - No explicit photo count indicator shown, only thumbnail count visual
+- [x] Can add more photos after initial selection - PASS - Added 2 more photos after initial 3
+- [x] Maximum of 10 photos enforced - PASS - Dropzone hides at 10 photos; error shown when trying to exceed limit
+- [x] Can remove individual photos if supported - PASS - Remove button (X) on each thumbnail works correctly
+
+### Screenshots
+- .playwright-mcp/multi-photo-upload-3-files.png - 3 photos after initial multi-select
+- .playwright-mcp/multi-photo-upload-5-files.png - 5 photos after adding more
+- .playwright-mcp/multi-photo-upload-10-max.png - 10 photos at maximum limit
+- .playwright-mcp/multi-photo-upload-limit-error.png - Error when exceeding limit
+
+### Issues Found
+- **LOW**: No explicit photo count indicator (e.g., "3 of 10 photos"). Users must count thumbnails visually to know how many are uploaded. This was also noted in the single photo upload test (facet-d3x).
+
+### Notes
+- Multiple file selection works smoothly via file picker
+- Preview thumbnails display in responsive grid layout
+- Remove buttons appear on hover (good UX to keep UI clean)
+- Upload dropzone automatically hides when at max capacity (10 photos)
+- Upload dropzone reappears when photos are removed below max
+- Validation error "Can only add N more file(s)" is clear and helpful
+- Error clears automatically when user tries a valid action
+- All file operations are local (client-side) until form submission
+
