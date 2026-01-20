@@ -84,11 +84,15 @@ pub fn api_router(state: AppState) -> Router {
         .route("/", post(handlers::create_employee))
         .route("/verify", post(handlers::verify_employee_pin));
 
+    // Admin routes
+    let admin_routes = Router::new().route("/setup", post(handlers::admin_setup));
+
     // API v1 routes
     let api_v1 = Router::new()
         .nest("/tickets", tickets_routes)
         .nest("/queue", queue_route)
-        .nest("/employees", employees_routes);
+        .nest("/employees", employees_routes)
+        .nest("/admin", admin_routes);
 
     Router::new()
         .route("/health", axum::routing::get(health::health_check))
