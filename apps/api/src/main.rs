@@ -1,4 +1,4 @@
-use api::{api_router, Config};
+use api::{api_router, create_pool, test_connection, AppState, Config, DbConfig};
 use std::time::Duration;
 use tokio::signal;
 use tower_http::cors::{Any, CorsLayer};
@@ -22,11 +22,27 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    // Create database connection pool
+    let db_config = DbConfig::new(&config.database_url);
+    let db_pool = create_pool(&db_config)
+        .await
+        .expect("Failed to create database pool");
+
+    // Test database connection
+    test_connection(&db_pool)
+        .await
+        .expect("Failed to connect to database");
+
+    // Create application state
+    let state = AppState::new(db_pool);
+
     // Build CORS layer
     let cors = build_cors_layer(&config);
 
     // Build router with middleware
-    let app = api_router().layer(TraceLayer::new_for_http()).layer(cors);
+    let app = api_router(state)
+        .layer(TraceLayer::new_for_http())
+        .layer(cors);
 
     // Start server with graceful shutdown
     tracing::info!("Starting server on {}", config.server_addr);

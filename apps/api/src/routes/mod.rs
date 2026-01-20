@@ -13,11 +13,31 @@
 mod health;
 
 use axum::Router;
+use sqlx::postgres::PgPool;
 
 pub use health::health_check;
 
+/// Application state shared across all handlers.
+///
+/// Contains the database connection pool and other shared resources.
+#[derive(Clone)]
+pub struct AppState {
+    /// PostgreSQL connection pool
+    pub db: PgPool,
+}
+
+impl AppState {
+    /// Create a new AppState with the given database pool.
+    pub fn new(db: PgPool) -> Self {
+        Self { db }
+    }
+}
+
 /// Build the API router with all routes.
-pub fn api_router() -> Router {
+///
+/// The router is configured with shared application state containing
+/// the database pool.
+pub fn api_router(state: AppState) -> Router {
     // API v1 routes - will be expanded as handlers are implemented
     let api_v1 = Router::new();
     // Future routes:
@@ -32,4 +52,5 @@ pub fn api_router() -> Router {
     Router::new()
         .route("/health", axum::routing::get(health::health_check))
         .nest("/api/v1", api_v1)
+        .with_state(state)
 }
