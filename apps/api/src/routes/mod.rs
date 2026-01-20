@@ -13,7 +13,7 @@
 mod health;
 
 use axum::{
-    routing::{get, post, put},
+    routing::{get, put},
     Router,
 };
 use sqlx::postgres::PgPool;
@@ -45,7 +45,10 @@ impl AppState {
 pub fn api_router(state: AppState) -> Router {
     // Ticket routes
     let tickets_routes = Router::new()
-        .route("/", post(handlers::create_ticket))
+        .route(
+            "/",
+            get(handlers::list_tickets).post(handlers::create_ticket),
+        )
         .route("/{ticket_id}", put(handlers::update_ticket))
         .route("/{ticket_id}/receipt.pdf", get(handlers::get_receipt_pdf));
 

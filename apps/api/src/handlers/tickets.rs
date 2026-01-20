@@ -2,20 +2,20 @@
 
 use axum::{
     body::Body,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::models::{
-    CreateCustomer, CreateFieldHistory, CreateStatusHistory, CreateTicket, Ticket, TicketStatus,
-    UpdateTicket,
+    CreateCustomer, CreateFieldHistory, CreateStatusHistory, CreateTicket, QueueTicket, Ticket,
+    TicketFilters, TicketSearchParams, TicketStatus, UpdateTicket,
 };
 use crate::repositories::{
     CustomerRepository, EmployeeRepository, FieldHistoryRepository, StatusHistoryRepository,
@@ -24,6 +24,172 @@ use crate::repositories::{
 use crate::response::ApiResponse;
 use crate::routes::AppState;
 use crate::services::pdf::{generate_receipt_pdf, ReceiptData};
+
+/// Query parameters for listing tickets.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ListTicketsQuery {
+    /// Filter by status (comma-separated values like "intake,in_progress")
+    pub status: Option<String>,
+    /// Filter by rush flag
+    pub is_rush: Option<bool>,
+    /// Full-text search across ticket, customer, and notes
+    pub search: Option<String>,
+    /// Filter by customer ID
+    pub customer_id: Option<Uuid>,
+    /// Filter by created date range (start)
+    pub from_date: Option<DateTime<Utc>>,
+    /// Filter by created date range (end)
+    pub to_date: Option<DateTime<Utc>>,
+    /// Include archived tickets (default: false)
+    #[serde(default)]
+    pub include_archived: bool,
+    /// Limit results (default: 100)
+    pub limit: Option<i64>,
+    /// Offset for pagination (default: 0)
+    pub offset: Option<i64>,
+}
+
+impl ListTicketsQuery {
+    /// Parse comma-separated status string into TicketStatus values.
+    fn parse_statuses(&self) -> Option<Vec<TicketStatus>> {
+        self.status.as_ref().map(|s| {
+            s.split(',')
+                .filter_map(|status_str| match status_str.trim() {
+                    "intake" => Some(TicketStatus::Intake),
+                    "in_progress" => Some(TicketStatus::InProgress),
+                    "waiting_on_parts" => Some(TicketStatus::WaitingOnParts),
+                    "ready_for_pickup" => Some(TicketStatus::ReadyForPickup),
+                    "closed" => Some(TicketStatus::Closed),
+                    "archived" => Some(TicketStatus::Archived),
+                    _ => None,
+                })
+                .collect()
+        })
+    }
+}
+
+/// Paginated response for listing tickets.
+#[derive(Debug, Clone, Serialize)]
+pub struct ListTicketsResponse {
+    /// List of tickets
+    pub tickets: Vec<QueueTicket>,
+    /// Pagination info
+    pub pagination: PaginationInfo,
+}
+
+/// Pagination metadata.
+#[derive(Debug, Clone, Serialize)]
+pub struct PaginationInfo {
+    /// Number of items returned
+    pub count: usize,
+    /// Limit used in the query
+    pub limit: i64,
+    /// Offset used in the query
+    pub offset: i64,
+    /// Whether there may be more results
+    pub has_more: bool,
+}
+
+/// GET /api/v1/tickets - List tickets with filters.
+pub async fn list_tickets(
+    State(state): State<AppState>,
+    Query(query): Query<ListTicketsQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let limit = query.limit.unwrap_or(100);
+    let offset = query.offset.unwrap_or(0);
+
+    // If search is provided, use the search method
+    let tickets = if let Some(ref search_query) = query.search {
+        // Determine which statuses to search
+        let statuses = if let Some(parsed) = query.parse_statuses() {
+            Some(parsed)
+        } else if query.include_archived {
+            None // Search all statuses including archived
+        } else {
+            // Default: all active statuses (not closed/archived)
+            Some(vec![
+                TicketStatus::Intake,
+                TicketStatus::InProgress,
+                TicketStatus::WaitingOnParts,
+                TicketStatus::ReadyForPickup,
+            ])
+        };
+
+        let params = TicketSearchParams {
+            query: search_query.clone(),
+            statuses,
+            limit: Some(limit + 1), // Fetch one extra to determine has_more
+            offset: Some(offset),
+        };
+
+        TicketRepository::search(&state.db, params).await?
+    } else {
+        // Use the list method with filters
+        let mut statuses = query.parse_statuses();
+
+        // If no status filter and not including archived, default to active statuses
+        if statuses.is_none() && !query.include_archived {
+            statuses = Some(vec![
+                TicketStatus::Intake,
+                TicketStatus::InProgress,
+                TicketStatus::WaitingOnParts,
+                TicketStatus::ReadyForPickup,
+            ]);
+        }
+
+        let filters = TicketFilters {
+            statuses,
+            is_rush: query.is_rush,
+            customer_id: query.customer_id,
+            created_after: query.from_date,
+            created_before: query.to_date,
+            limit: Some(limit + 1), // Fetch one extra to determine has_more
+            offset: Some(offset),
+        };
+
+        // Convert TicketSummary to QueueTicket for consistent response format
+        let summaries = TicketRepository::list(&state.db, filters).await?;
+
+        // Convert to QueueTicket format (add is_overdue calculation)
+        let today = Utc::now().date_naive();
+        summaries
+            .into_iter()
+            .map(|s| QueueTicket {
+                ticket_id: s.ticket_id,
+                friendly_code: s.friendly_code,
+                customer_id: s.customer_id,
+                customer_name: s.customer_name,
+                item_type: s.item_type,
+                item_description: s.item_description,
+                status: s.status,
+                is_rush: s.is_rush,
+                promise_date: s.promise_date,
+                quote_amount: s.quote_amount,
+                created_at: s.created_at,
+                is_overdue: s
+                    .promise_date
+                    .map(|d| d < today && s.status.is_open())
+                    .unwrap_or(false),
+            })
+            .collect()
+    };
+
+    // Determine if there are more results
+    let has_more = tickets.len() as i64 > limit;
+    let tickets: Vec<QueueTicket> = tickets.into_iter().take(limit as usize).collect();
+
+    let response = ListTicketsResponse {
+        pagination: PaginationInfo {
+            count: tickets.len(),
+            limit,
+            offset,
+            has_more,
+        },
+        tickets,
+    };
+
+    Ok(Json(ApiResponse::success(response)))
+}
 
 /// Customer info for inline creation during ticket intake.
 #[derive(Debug, Clone, Deserialize)]
@@ -619,5 +785,106 @@ mod tests {
         assert!(request.quote_amount.is_none());
         assert!(request.actual_amount.is_none());
         assert!(request.worked_by_employee_id.is_none());
+    }
+
+    #[test]
+    fn test_list_tickets_query_deserialize_empty() {
+        let query: ListTicketsQuery = serde_urlencoded::from_str("").unwrap();
+        assert!(query.status.is_none());
+        assert!(query.is_rush.is_none());
+        assert!(query.search.is_none());
+        assert!(query.customer_id.is_none());
+        assert!(query.from_date.is_none());
+        assert!(query.to_date.is_none());
+        assert!(!query.include_archived);
+        assert!(query.limit.is_none());
+        assert!(query.offset.is_none());
+    }
+
+    #[test]
+    fn test_list_tickets_query_with_status_filter() {
+        let query: ListTicketsQuery =
+            serde_urlencoded::from_str("status=intake,in_progress").unwrap();
+        assert_eq!(query.status, Some("intake,in_progress".to_string()));
+
+        let statuses = query.parse_statuses().unwrap();
+        assert_eq!(statuses.len(), 2);
+        assert!(statuses.contains(&TicketStatus::Intake));
+        assert!(statuses.contains(&TicketStatus::InProgress));
+    }
+
+    #[test]
+    fn test_list_tickets_query_with_single_status() {
+        let query: ListTicketsQuery =
+            serde_urlencoded::from_str("status=ready_for_pickup").unwrap();
+        let statuses = query.parse_statuses().unwrap();
+        assert_eq!(statuses.len(), 1);
+        assert!(statuses.contains(&TicketStatus::ReadyForPickup));
+    }
+
+    #[test]
+    fn test_list_tickets_query_ignores_invalid_status() {
+        let query: ListTicketsQuery =
+            serde_urlencoded::from_str("status=intake,invalid,in_progress").unwrap();
+        let statuses = query.parse_statuses().unwrap();
+        assert_eq!(statuses.len(), 2);
+        assert!(statuses.contains(&TicketStatus::Intake));
+        assert!(statuses.contains(&TicketStatus::InProgress));
+    }
+
+    #[test]
+    fn test_list_tickets_query_with_rush_filter() {
+        let query: ListTicketsQuery = serde_urlencoded::from_str("is_rush=true").unwrap();
+        assert_eq!(query.is_rush, Some(true));
+
+        let query: ListTicketsQuery = serde_urlencoded::from_str("is_rush=false").unwrap();
+        assert_eq!(query.is_rush, Some(false));
+    }
+
+    #[test]
+    fn test_list_tickets_query_with_search() {
+        let query: ListTicketsQuery = serde_urlencoded::from_str("search=gold+ring").unwrap();
+        assert_eq!(query.search, Some("gold ring".to_string()));
+    }
+
+    #[test]
+    fn test_list_tickets_query_with_pagination() {
+        let query: ListTicketsQuery = serde_urlencoded::from_str("limit=50&offset=100").unwrap();
+        assert_eq!(query.limit, Some(50));
+        assert_eq!(query.offset, Some(100));
+    }
+
+    #[test]
+    fn test_list_tickets_query_with_customer_id() {
+        let query: ListTicketsQuery =
+            serde_urlencoded::from_str("customer_id=550e8400-e29b-41d4-a716-446655440000").unwrap();
+        assert_eq!(
+            query.customer_id,
+            Some(Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap())
+        );
+    }
+
+    #[test]
+    fn test_list_tickets_query_include_archived() {
+        let query: ListTicketsQuery = serde_urlencoded::from_str("include_archived=true").unwrap();
+        assert!(query.include_archived);
+
+        let query: ListTicketsQuery = serde_urlencoded::from_str("").unwrap();
+        assert!(!query.include_archived);
+    }
+
+    #[test]
+    fn test_pagination_info_serialization() {
+        let info = PaginationInfo {
+            count: 10,
+            limit: 50,
+            offset: 0,
+            has_more: false,
+        };
+        let json = serde_json::to_string(&info).unwrap();
+        assert!(json.contains("\"count\":10"));
+        assert!(json.contains("\"limit\":50"));
+        assert!(json.contains("\"offset\":0"));
+        assert!(json.contains("\"has_more\":false"));
     }
 }
