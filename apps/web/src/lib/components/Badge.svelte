@@ -43,15 +43,15 @@
 		min-height: 1.5rem;
 	}
 
-	/* Rush variant - red for urgent items */
+	/* Rush variant - amber/gold for priority items */
 	.badge-rush {
-		background-color: var(--color-rush, #ef4444);
+		background-color: var(--color-rush-badge, #d97706);
 		color: white;
 	}
 
-	/* Overdue variant - darker red for overdue items */
+	/* Overdue variant - red for overdue items */
 	.badge-overdue {
-		background-color: #b91c1c;
+		background-color: var(--color-overdue, #dc2626);
 		color: white;
 	}
 

@@ -67,8 +67,10 @@
 	--color-warning: #daa520;
 	--color-error: #8b0000;
 
-	/* Rush indicator - Magical cyan for fantasy feel */
+	/* Rush/Priority indicators - Magical cyan for fantasy feel */
 	--color-rush: #00ced1;
+	--color-rush-badge: #00ced1;
+	--color-overdue: #8b0000;
 
 	/* Shadows - Inner shadows for inset panel feel */
 	--shadow-sm: inset 0 1px 2px 0 rgb(0 0 0 / 0.3);

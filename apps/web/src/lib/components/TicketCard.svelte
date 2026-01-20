@@ -61,6 +61,7 @@
 
 <div
 	class="ticket-card-wrapper {className}"
+	class:is-rush={ticket.is_rush}
 	class:is-overdue={ticket.is_overdue}
 	class:is-dragging={isDragging}
 	draggable="true"
@@ -123,9 +124,31 @@
 			opacity var(--transition-fast, 150ms ease);
 	}
 
-	/* Overdue indicator - red left border */
+	/* Rush indicator - amber left border with subtle background tint */
+	.ticket-card-wrapper.is-rush {
+		position: relative;
+		background-color: rgba(217, 119, 6, 0.04);
+		border-radius: var(--radius-lg, 0.75rem);
+	}
+
+	.ticket-card-wrapper.is-rush::before {
+		content: '';
+		position: absolute;
+		left: 0;
+		top: 0;
+		bottom: 0;
+		width: 4px;
+		background-color: var(--color-rush-badge, #d97706);
+		border-radius: var(--radius-lg, 0.75rem) 0 0 var(--radius-lg, 0.75rem);
+		z-index: 1;
+	}
+
+	/* Overdue indicator - red left border with subtle background tint */
+	/* Overdue takes precedence over rush for visual styling */
 	.ticket-card-wrapper.is-overdue {
 		position: relative;
+		background-color: rgba(220, 38, 38, 0.04);
+		border-radius: var(--radius-lg, 0.75rem);
 	}
 
 	.ticket-card-wrapper.is-overdue::before {
@@ -135,7 +158,7 @@
 		top: 0;
 		bottom: 0;
 		width: 4px;
-		background-color: var(--color-rush, #ef4444);
+		background-color: var(--color-overdue, #dc2626);
 		border-radius: var(--radius-lg, 0.75rem) 0 0 var(--radius-lg, 0.75rem);
 		z-index: 1;
 	}

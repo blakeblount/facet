@@ -35,8 +35,10 @@
 	--color-status-ready: #10b981;
 	--color-status-closed: #6b7280;
 
-	/* Rush indicator */
+	/* Rush/Priority indicators */
 	--color-rush: #ef4444;
+	--color-rush-badge: #d97706;
+	--color-overdue: #dc2626;
 
 	/* Spacing scale */
 	--spacing-xs: 0.25rem;
@@ -92,8 +94,10 @@
 	--color-ready: #10b981;
 	--color-closed: #6b7280;
 
-	/* Rush indicator */
+	/* Rush/Priority indicators */
 	--color-rush: #ef4444;
+	--color-rush-badge: #d97706;
+	--color-overdue: #dc2626;
 
 	/* Spacing scale */
 	--space-xs: 0.25rem;
