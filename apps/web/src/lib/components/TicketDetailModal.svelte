@@ -12,6 +12,7 @@
 		toggleRush,
 		addTicketNote,
 		setCurrentEmployee,
+		verifyEmployeePin,
 		type TicketDetailResponse,
 		type TicketStatus,
 		type TicketPhoto,
@@ -283,12 +284,14 @@
 	}
 
 	function handleAmountSubmit() {
-		if (!actualAmount.trim()) {
+		// Convert to string in case type="number" input returns a number
+		const amountStr = String(actualAmount).trim();
+		if (!amountStr) {
 			closeError = 'Please enter the actual amount charged';
 			return;
 		}
 		// Validate it's a valid number
-		const amount = parseFloat(actualAmount);
+		const amount = parseFloat(amountStr);
 		if (isNaN(amount) || amount < 0) {
 			closeError = 'Please enter a valid amount';
 			return;
@@ -308,7 +311,11 @@
 		closeError = null;
 
 		try {
-			await closeTicket(ticket.ticket_id, actualAmount);
+			// Verify the employee PIN first
+			const employee = await verifyEmployeePin(employeePin);
+			setCurrentEmployee(employee.employee_id);
+
+			await closeTicket(ticket.ticket_id, String(actualAmount));
 			showCloseModal = false;
 			onTicketClosed?.();
 			// Refresh the ticket to show updated status
@@ -317,6 +324,7 @@
 			closeError = e instanceof Error ? e.message : 'Failed to close ticket';
 		} finally {
 			isClosing = false;
+			setCurrentEmployee(null);
 		}
 	}
 

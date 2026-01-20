@@ -788,3 +788,62 @@ Add employee PIN modal flow to photo upload:
 - Accessing the TicketDetailModal requires using the Search page; workboard still navigates to placeholder page (known issue from facet-19y)
 - Console shows 405 error for /api/v1/photos which appears unrelated to rush toggle (possibly from photo loading)
 
+---
+
+## TEST: facet-6tg - Close Ticket Flow - Full Process
+**Date:** 2026-01-20
+**Status:** PASS (after bug fixes)
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to workboard - no tickets in "Ready for Pickup" status
+2. Used API to change ticket JR-0001 status to "ready_for_pickup" (for test setup)
+3. Navigated to Search page, filtered by "Ready for Pickup" status
+4. Found 1 ticket (JR-0001), clicked to open TicketDetailModal
+5. Verified "Close Ticket" button is visible (status is "Ready for Pickup")
+6. Clicked "Close Ticket" button - modal opened with Step 1 (Amount entry)
+7. Entered actual amount "145.50" and clicked Next
+8. **BUG FOUND**: Form submission failed with `$.get(...).trim is not a function`
+9. **Fixed Bug**: `actualAmount.trim()` was called on a number (type="number" input returns number, not string)
+10. Retested - Step 1 to Step 2 transition now works
+11. Entered employee PIN "changeme" and clicked "Close Ticket"
+12. **BUG FOUND**: Error "X-Employee-ID header is required"
+13. **Fixed Bug**: `handleEmployeeSubmit()` was not calling `verifyEmployeePin()` or `setCurrentEmployee()` before the API call
+14. Retested - full flow completed successfully
+15. Verified ticket status changed to "Closed"
+16. Verified actual amount shows "$145.50"
+17. Verified status history shows new entry "Ready for Pickup → Closed"
+18. Verified "Closed by: Admin" and closed timestamp in Activity section
+19. Verified "Close Ticket" button is no longer visible (only Print buttons remain)
+20. Navigated to workboard - verified ticket removed from "Ready for Pickup" lane (shows 0 tickets)
+
+### Success Criteria Results
+- [x] "Close Ticket" button only visible for "Ready for Pickup" status - PASS
+- [x] Clicking opens close modal with Step 1 (Actual Amount) - PASS
+- [x] Must enter valid amount to proceed - PASS (validated as number, non-empty, non-negative)
+- [x] "Next" advances to Step 2 (PIN) - PASS (after bug fix)
+- [x] "Back" returns to Step 1 - PASS (amount preserved)
+- [x] After PIN verification, ticket status changes to "Closed" - PASS (after bug fix)
+- [x] Actual amount is recorded - PASS (shows $145.50)
+- [x] Detail modal updates to show closed state - PASS (status badge shows "Closed")
+- [x] Action buttons become disabled (no further edits) - PASS ("Close Ticket" button removed, only Print buttons remain)
+- [x] Ticket moves out of workboard queues - PASS (Ready for Pickup lane shows 0 tickets)
+
+### Screenshots
+- .playwright-mcp/close-ticket-button-visible.png - Ticket detail showing Close Ticket button
+- .playwright-mcp/close-ticket-step1-amount.png - Close modal Step 1 (Enter Amount)
+- .playwright-mcp/close-ticket-step2-pin.png - Close modal Step 2 (Enter PIN)
+- .playwright-mcp/close-ticket-success-closed-state.png - Ticket detail after closing
+
+### Issues Found
+- **CRITICAL (Fixed)**: `handleAmountSubmit()` called `.trim()` on `actualAmount` which was a number (not string) due to `type="number"` input. Fixed by converting to string first: `String(actualAmount).trim()`
+- **CRITICAL (Fixed)**: `handleEmployeeSubmit()` did not verify PIN or set current employee before API call. Added `verifyEmployeePin()` and `setCurrentEmployee()` calls before `closeTicket()` API call.
+- **CRITICAL (Fixed)**: `verifyEmployeePin` was not imported in the component. Added to imports from `$lib/services/api`.
+
+### Notes
+- The close ticket flow follows the same pattern as other attribution-requiring actions but was missing the PIN verification step
+- Form validation uses native HTML5 validation with `required` attribute, but the Input component with `type="number"` was returning a number instead of string
+- After closing, the ticket is correctly removed from all workboard lanes (not just hidden, but filtered out at the API level)
+- The test required manual status change via API to set up preconditions (no tickets were in "Ready for Pickup" status initially)
+- Accessing the TicketDetailModal requires using the Search page; workboard ticket cards navigate to placeholder page
+
