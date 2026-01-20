@@ -1,6 +1,6 @@
 # Facet PRD
 **Document type:** Product Requirements Document
-**Version:** 0.1 (MVP spec)
+**Version:** 0.2 (MVP spec, clarifications added)
 **Primary platform:** Desktop-first web app (responsive; expandable to mobile later)
 
 ---
@@ -98,15 +98,24 @@ Jewelry repair intake and tracking is often handled via paper forms, spreadsheet
 
 ## 6. Status Model (MVP)
 Starter statuses:
-1. **Intake**
-2. **In Progress**
-3. **Waiting on Parts**
-4. **Ready for Pickup**
-5. **Closed**
+1. **Intake** - Item received, work not yet started
+2. **In Progress** - Actively being worked on
+3. **Waiting on Parts** - Blocked on external dependency
+4. **Ready for Pickup** - Work complete, awaiting customer
+5. **Closed** - Customer picked up, ticket complete
+6. **Archived** - Closed tickets auto-archive for long-term storage
 
-Notes:
-- Status changes should record timestamp and employee attribution.
-- Closed tickets are read-only except via Admin override.
+**Status Rules:**
+- Status changes record timestamp and employee attribution
+- Closed tickets are **read-only** except via Admin override
+- **Closed tickets cannot be reopened** - if a customer returns with the same item for new work, create a new ticket
+- Closed tickets automatically transition to **Archived** status (timing TBD, e.g., after 30 days)
+- Archived tickets remain searchable but are hidden from the main queue view
+
+**Editing Rules:**
+- Most fields can be edited while ticket is open (Intake through Ready for Pickup)
+- Once Closed, only Admin can edit
+- Editing records `last_modified_by_employee_id` and timestamp in audit trail
 
 ---
 
@@ -116,6 +125,12 @@ Within each status lane, sort by:
 1. `is_rush` (true first)
 2. `created_at` ascending (FIFO)
 
+### Overdue Visual Indicator
+Tickets past their `promise_date` display a **red visual indicator**:
+- Ticket card turns red or has red border/flag
+- Overdue badge visible on card
+- Overdue tickets sort normally (no automatic priority bump) but are visually prominent
+
 ### Phase 2 (Planned)
 - Add **drag-and-drop ordering** within each status lane.
 - Persist an explicit `queue_rank` / `sort_index`.
@@ -124,20 +139,41 @@ Within each status lane, sort by:
 ---
 
 ## 8. Data Capture Requirements
-### 8.1 Ticket Fields (MVP)
+
+### 8.1 Customer Entity
+Customers are stored as a **separate entity** from tickets to support repeat customers.
+
+**Customer Fields**
+- `customer_id` (UUID)
+- `name` (required)
+- `phone` (optional)
+- `email` (optional)
+- `created_at`
+
+**Behavior**
+- During ticket intake, staff can search for existing customers by name/phone/email
+- If a match is found, auto-fill customer info and link ticket to existing customer
+- If no match, a new customer record is created inline during ticket creation
+- Customer creation should be seamless - no separate "create customer" step required
+
+### 8.2 Ticket Fields (MVP)
 **Identity & timestamps**
 - `ticket_id` (UUID, offline-capable)
-- `friendly_code` (human-friendly short code, e.g., JR-9F3K2)
+- `friendly_code` (human-friendly short code, e.g., JR-0001)
 - `created_at`, `updated_at`
 - `closed_at` (nullable)
 
-**Customer**
-- `customer_name` (required)
-- `customer_phone` (optional)
-- `customer_email` (optional)
+**friendly_code generation:**
+- Format: `{store_prefix}-{sequential_number}` (e.g., JR-0001, JR-0002)
+- Store prefix is configurable in admin settings (default: "JR")
+- Sequential number assigned server-side on ticket creation
+- Offline-created tickets get friendly_code assigned on sync (use UUID until then)
+
+**Customer Reference**
+- `customer_id` (required, references customer entity)
 
 **Item & condition**
-- `item_type` (optional select: ring, necklace, bracelet, etc.)
+- `item_type` (free text, optional)
 - `item_description` (required)
 - `condition_notes` (required)
 - `requested_work` (required)
@@ -146,7 +182,7 @@ Within each status lane, sort by:
 - `status` (required)
 - `is_rush` (default false)
 - `promise_date` (optional)
-- `storage_location` (recommended, required in MVP if practical)
+- `storage_location_id` (required, references managed storage locations list)
 
 **Pricing**
 - `quote_amount` (optional)
@@ -159,15 +195,42 @@ Within each status lane, sort by:
 - `closed_by_employee_id` (required at close)
 - `last_modified_by_employee_id` (captured on edits/status changes)
 
-### 8.2 Photos (MVP)
+### 8.3 Storage Locations (Managed List)
+Storage locations are a **managed list** maintained by admins.
+
+- Admins can add new locations on-the-fly during ticket creation
+- Regular staff can only select from existing locations
+- Examples: "Safe Drawer 1", "Workbench A", "Display Case 3"
+- Locations can be deactivated but not deleted (preserve history)
+
+**Fields:**
+- `location_id` (UUID)
+- `name` (required, unique)
+- `is_active` (default true)
+- `created_at`
+
+### 8.4 Photos (MVP)
 - Minimum: **1 photo required**.
 - Allow up to 10 photos per ticket (configurable).
+- **File upload only** for MVP (camera API integration later).
 - Photos stored as objects; ticket stores references.
 - Capture:
   - `photo_id`, `ticket_id`, `uploaded_at`
   - `uploaded_by_employee_id`
   - `storage_key` / URL reference
   - `content_type`, `size_bytes`
+
+### 8.5 Notes (Internal Only)
+Notes are **internal only** - not visible to customers.
+
+**Fields:**
+- `note_id` (UUID)
+- `ticket_id` (required)
+- `content` (text, required)
+- `created_by_employee_id` (required)
+- `created_at`
+
+Notes are append-only; existing notes cannot be edited or deleted (audit trail).
 
 ---
 
@@ -191,7 +254,13 @@ Must include:
 - Short item descriptor (truncate)
 - Optional status or created date
 
-Security intent:
+**Print Failure Handling:**
+- Ticket **cannot be saved** until print succeeds (receipt + tag are the physical claim check)
+- If print fails, display error with retry option
+- Staff must resolve print issue before completing intake
+- For reprints (from ticket detail), failure does not affect ticket state
+
+**Security intent:**
 - Customer must present receipt to retrieve item.
 - Staff verifies receipt ID matches physical tag ID.
 
@@ -208,12 +277,31 @@ Security intent:
   - Editing critical fields (condition, requested work, pricing)
 
 ### UX Guidance
-- Use a quick modal: “Enter Employee ID” (with fast keypad input).
-- Cache the last-used Employee ID for a short window (e.g., 5 minutes) to reduce friction, but allow quick switching.
+- Use a quick modal: "Enter Employee ID" (with fast keypad input).
+- **After completing an action**, return to "Enter Employee ID" state (no persistent session).
+- This ensures each action is attributed to whoever is at the workstation at that moment.
+
+### Employee Lifecycle
+- Employees can be **deactivated** (not deleted) to preserve attribution history
+- Deactivated employees cannot perform actions but their past actions remain visible
+- Hard delete option available but buried in admin UI (requires confirmation, warns about history loss)
+
+**Employee Fields:**
+- `employee_id` (UUID)
+- `name` (required)
+- `pin` (short code, hashed)
+- `role` (staff | admin)
+- `is_active` (default true)
+- `created_at`
 
 ### Admin vs Staff
 - Staff actions: most ticket workflow operations.
 - Admin actions: configuration + sensitive operations (delete photos, edit closed tickets, delete tickets).
+
+### Admin Bootstrap
+- System ships with a **default admin account** (admin / changeme or similar)
+- On first login, admin is **forced to change password**
+- This allows initial store setup without external provisioning
 
 ---
 
@@ -236,8 +324,14 @@ Security intent:
    - Print buttons (receipt/tag reprint)
 
 4. **Search**
-   - Search by customer name, phone/email, ticket code, keywords
-   - Filter by status and date range
+   - **Full-text search** across all relevant fields:
+     - Customer name, phone, email
+     - Ticket friendly_code
+     - Item description, condition notes, requested work
+     - Notes content
+   - Filter by status (including Archived) and date range
+   - Search should be thorough - partial matches, case-insensitive
+   - Archived tickets included in search results (marked as archived)
 
 5. **Admin Settings**
    - Employees management
@@ -272,10 +366,25 @@ If internet goes down, staff can still:
 ### Implementation Direction
 - Use PWA capabilities + local storage (IndexedDB).
 - Tickets created offline use UUID Ticket IDs immediately.
-- Sync engine:
-  - pushes tickets/photos when connection returns
-  - resolves conflicts (MVP: “server wins”, with alerts for collisions)
+- `friendly_code` assigned server-side on sync (display UUID or "Pending" until then).
 - Printing works offline using locally generated PDF/label templates.
+
+### Sync and Conflict Resolution
+**New tickets created offline:**
+- Sync automatically when connection returns
+- Assigned `friendly_code` on server
+- No conflict possible (new records)
+
+**Edits to existing tickets while offline:**
+- If the same ticket was edited online by someone else, **server wins**
+- User sees toast notification: "This ticket was updated while you were offline. Your changes were not saved."
+- User can view current ticket state and re-enter changes if needed
+- At ~30 tickets/day on a single workstation, this scenario is rare
+
+**Expected Volume:**
+- ~30 tickets per day
+- Single workstation (shared mode)
+- Offline conflicts expected to be rare
 
 ---
 
@@ -288,11 +397,19 @@ If internet goes down, staff can still:
 - **Deployment (Phase 1):** Single DigitalOcean Droplet with Docker Compose
 - **Deployment (Scale):** Separate API + DB + Spaces; optionally DO App Platform later
 
+### API Design
+- **REST API** with JSON payloads
+- Standard HTTP methods (GET, POST, PUT, DELETE)
+- Consistent response format: `{ "data": {...}, "error": null }` or `{ "data": null, "error": {...} }`
+- Employee ID passed in request header or body for attribution
+- Endpoints to be defined in separate API spec document
+
 ### Security Notes
 - Store PII securely; enforce TLS everywhere.
 - Photos served via signed URLs (short-lived) when multi-tenant is introduced.
 - Rate limits and basic abuse prevention for public endpoints.
 - Admin functions protected by Admin credential and server-side authorization.
+- Employee PINs stored as salted hashes, never plain text.
 
 ---
 
@@ -331,3 +448,7 @@ If internet goes down, staff can still:
 - Quotes approval workflow (customer approval capture)
 - Multi-tenant store separation, billing, and onboarding
 - Integration with POS or accounting systems
+- Camera API integration for photo capture
+- Label printer hardware compatibility
+- Customer notification preferences (when Phase 2)
+- Archive retention policy (how long to keep archived tickets)
