@@ -6,6 +6,7 @@
 	import { themeStore } from '$lib/stores/theme.svelte';
 	import { offlineStore } from '$lib/stores/offline.svelte';
 	import { syncQueueStore } from '$lib/services/syncQueue.svelte';
+	import { employeeCacheStore } from '$lib/services/employeeCache.svelte';
 	import '../app.css';
 	import '$lib/themes/imperial.css';
 	import '$lib/themes/arcane.css';
@@ -15,10 +16,11 @@
 		themeStore.init();
 	});
 
-	// Initialize offline detection and sync queue
+	// Initialize offline detection, sync queue, and employee cache
 	$effect(() => {
 		offlineStore.init();
 		syncQueueStore.init();
+		employeeCacheStore.init();
 	});
 
 	let { children } = $props();

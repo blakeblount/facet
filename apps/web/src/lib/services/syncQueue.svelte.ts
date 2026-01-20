@@ -11,6 +11,7 @@ import {
 	setCurrentEmployee,
 	type CreateTicketRequest
 } from './api';
+import { getStore, QUEUED_TICKETS_STORE } from './offlineDb';
 
 // =============================================================================
 // Types
@@ -85,55 +86,16 @@ export type SyncProgressCallback = (
 ) => void;
 
 // =============================================================================
-// IndexedDB Setup
+// IndexedDB Setup (uses shared offlineDb)
 // =============================================================================
 
-const DB_NAME = 'facet-offline';
-const DB_VERSION = 1;
-const STORE_NAME = 'queued-tickets';
-
-let db: IDBDatabase | null = null;
+const STORE_NAME = QUEUED_TICKETS_STORE;
 
 /**
- * Open or create the IndexedDB database
+ * Get the queued tickets object store
  */
-async function openDatabase(): Promise<IDBDatabase> {
-	if (db) {
-		return db;
-	}
-
-	return new Promise((resolve, reject) => {
-		const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-		request.onerror = () => {
-			reject(new Error('Failed to open IndexedDB'));
-		};
-
-		request.onsuccess = () => {
-			db = request.result;
-			resolve(db);
-		};
-
-		request.onupgradeneeded = (event) => {
-			const database = (event.target as IDBOpenDBRequest).result;
-
-			// Create object store for queued tickets
-			if (!database.objectStoreNames.contains(STORE_NAME)) {
-				const store = database.createObjectStore(STORE_NAME, { keyPath: 'clientId' });
-				store.createIndex('status', 'status', { unique: false });
-				store.createIndex('queuedAt', 'queuedAt', { unique: false });
-			}
-		};
-	});
-}
-
-/**
- * Get an object store for a transaction
- */
-async function getStore(mode: IDBTransactionMode): Promise<IDBObjectStore> {
-	const database = await openDatabase();
-	const transaction = database.transaction(STORE_NAME, mode);
-	return transaction.objectStore(STORE_NAME);
+async function getQueueStore(mode: IDBTransactionMode): Promise<IDBObjectStore> {
+	return getStore(STORE_NAME, mode);
 }
 
 // =============================================================================
@@ -178,10 +140,12 @@ export async function queueTicket(
 	employeeId: string,
 	employeeName: string
 ): Promise<QueuedTicket> {
-	const store = await getStore('readwrite');
-
-	// Convert photos to storable format
+	// Convert photos to storable format BEFORE opening the transaction
+	// IndexedDB transactions auto-commit when idle, so we can't do async work
+	// between getting the store and using it
 	const queuedPhotos = await Promise.all(photos.map(fileToQueuedPhoto));
+
+	const store = await getQueueStore('readwrite');
 
 	const ticket: QueuedTicket = {
 		clientId: generateClientId(),
@@ -189,6 +153,7 @@ export async function queueTicket(
 		photos: queuedPhotos,
 		employeeId,
 		employeeName,
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- not reactive state
 		queuedAt: new Date().toISOString(),
 		status: 'pending',
 		syncAttempts: 0
@@ -211,7 +176,7 @@ export async function queueTicket(
  * Get all queued tickets
  */
 export async function getQueuedTickets(): Promise<QueuedTicket[]> {
-	const store = await getStore('readonly');
+	const store = await getQueueStore('readonly');
 
 	return new Promise((resolve, reject) => {
 		const request = store.getAll();
@@ -246,7 +211,7 @@ export async function getPendingCount(): Promise<number> {
  * Update a queued ticket
  */
 async function updateTicket(ticket: QueuedTicket): Promise<void> {
-	const store = await getStore('readwrite');
+	const store = await getQueueStore('readwrite');
 
 	return new Promise((resolve, reject) => {
 		const request = store.put(ticket);
@@ -265,7 +230,7 @@ async function updateTicket(ticket: QueuedTicket): Promise<void> {
  * Remove a synced ticket from the queue
  */
 export async function removeTicket(clientId: string): Promise<void> {
-	const store = await getStore('readwrite');
+	const store = await getQueueStore('readwrite');
 
 	return new Promise((resolve, reject) => {
 		const request = store.delete(clientId);
