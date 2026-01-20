@@ -641,3 +641,49 @@ Add employee PIN modal flow to photo upload:
 - Note metadata (timestamp and author) is correctly recorded and displayed
 - The TicketDetailModal is accessible via the Search page; workboard still uses placeholder detail page
 
+---
+
+## TEST: facet-e4u - Lane Count Badge Accuracy
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/
+2. Initial page showed cached data (2 tickets) while API had 3 tickets
+3. Cleared browser cache and reloaded page to get fresh data
+4. Verified workboard loaded with 4 horizontal status lanes
+5. Counted tickets visually in each lane
+6. Compared badge numbers to actual ticket counts
+7. Examined badge styling via JavaScript to verify consistency
+8. Captured screenshot documenting the workboard state
+
+### Success Criteria Results
+- [x] Intake lane count matches visible ticket count - PASS - Badge shows "3", 3 visible tickets (JR-0001, JR-0002, JR-0003)
+- [x] In Progress lane count matches visible ticket count - PASS - Badge shows "0", displays "No tickets"
+- [x] Waiting on Parts lane count matches visible ticket count - PASS - Badge shows "0", displays "No tickets"
+- [x] Ready for Pickup lane count matches visible ticket count - PASS - Badge shows "0", displays "No tickets"
+- [x] Count badges are styled consistently (same color, size) - PASS - All badges share consistent styling:
+  - Font size: 12px
+  - Font weight: 600 (semi-bold)
+  - Text color: white (#fff)
+  - Padding: 0px 4px
+  - Border radius: 6px
+  - Background colors intentionally differ by lane for visual differentiation (purple/blue/yellow/green)
+
+### Screenshots
+- .playwright-mcp/lane-count-badges-test.png
+
+### Issues Found
+- **MEDIUM**: Service worker cache can show stale data on initial load. After creating a ticket, the workboard briefly showed the old count (2) instead of the updated count (3). A hard refresh or cache clear resolved this. This may confuse users who expect real-time updates without manual refresh.
+
+### Notes
+- API confirmed 3 tickets in Intake lane at http://localhost:3001/api/v1/queue
+- Count badges are color-coded by status lane for visual differentiation:
+  - Intake: Purple (rgb(107, 91, 149))
+  - In Progress: Blue (rgb(30, 58, 95))
+  - Waiting on Parts: Yellow/Gold (rgb(212, 160, 23))
+  - Ready for Pickup: Green (rgb(45, 90, 61))
+- Empty lanes correctly display "No tickets" placeholder text
+- Badge styling is intentionally consistent in all properties except background color
+
