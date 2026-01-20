@@ -110,7 +110,10 @@ pub fn api_router(state: AppState) -> Router {
     );
 
     // Storage location routes
-    let locations_routes = Router::new().route("/", get(handlers::list_locations));
+    let locations_routes = Router::new().route(
+        "/",
+        get(handlers::list_locations).post(handlers::create_location),
+    );
 
     // API v1 routes
     let api_v1 = Router::new()

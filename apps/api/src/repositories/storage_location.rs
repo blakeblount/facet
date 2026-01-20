@@ -30,6 +30,23 @@ impl StorageLocationRepository {
         Ok(location)
     }
 
+    /// Find a storage location by name.
+    pub async fn find_by_name(
+        pool: &PgPool,
+        name: &str,
+    ) -> Result<Option<StorageLocation>, AppError> {
+        let location = sqlx::query_as::<_, StorageLocation>(
+            r#"
+            SELECT * FROM storage_locations WHERE LOWER(name) = LOWER($1)
+            "#,
+        )
+        .bind(name)
+        .fetch_optional(pool)
+        .await?;
+
+        Ok(location)
+    }
+
     /// Find a storage location by ID.
     pub async fn find_by_id(
         pool: &PgPool,

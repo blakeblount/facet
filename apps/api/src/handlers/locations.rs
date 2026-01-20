@@ -2,16 +2,39 @@
 
 use axum::{
     extract::{Query, State},
+    http::HeaderMap,
     response::IntoResponse,
     Json,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::error::AppError;
-use crate::models::storage_location::StorageLocationSummary;
-use crate::repositories::StorageLocationRepository;
-use crate::response::ApiResponse;
+use crate::models::storage_location::{CreateStorageLocation, StorageLocationSummary};
+use crate::repositories::{StorageLocationRepository, StoreSettingsRepository};
+use crate::response::{created, ApiResponse};
 use crate::routes::AppState;
+
+// =============================================================================
+// Admin PIN Verification Helper
+// =============================================================================
+
+/// Extract and verify admin PIN from X-Admin-PIN header.
+///
+/// Returns an error if the header is missing or the PIN is invalid.
+async fn verify_admin_pin_header(state: &AppState, headers: &HeaderMap) -> Result<(), AppError> {
+    let pin = headers
+        .get("X-Admin-PIN")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| AppError::invalid_pin("Missing X-Admin-PIN header"))?;
+
+    let is_valid = StoreSettingsRepository::verify_admin_pin(&state.db, pin).await?;
+
+    if !is_valid {
+        return Err(AppError::invalid_pin("Invalid admin PIN"));
+    }
+
+    Ok(())
+}
 
 // =============================================================================
 // GET /locations - List Storage Locations
@@ -54,6 +77,58 @@ pub async fn list_locations(
     };
 
     Ok(Json(ApiResponse::success(response)))
+}
+
+// =============================================================================
+// POST /locations (admin) - Create Storage Location
+// =============================================================================
+
+/// POST /api/v1/locations - Create a new storage location (admin only).
+///
+/// Requires X-Admin-PIN header for authorization.
+/// Creates a storage location with the provided name.
+/// Name must be unique (case-insensitive).
+///
+/// Returns the created location.
+pub async fn create_location(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<CreateStorageLocation>,
+) -> Result<impl IntoResponse, AppError> {
+    // Verify admin PIN
+    verify_admin_pin_header(&state, &headers).await?;
+
+    // Validate input
+    let name = body.name.trim();
+    if name.is_empty() {
+        return Err(AppError::validation("Name is required"));
+    }
+
+    // Check for duplicate name
+    let existing = StorageLocationRepository::find_by_name(&state.db, name).await?;
+    if existing.is_some() {
+        return Err(AppError::validation(
+            "A location with this name already exists",
+        ));
+    }
+
+    // Create the location
+    let location = StorageLocationRepository::create(
+        &state.db,
+        CreateStorageLocation {
+            name: name.to_string(),
+        },
+    )
+    .await?;
+
+    // Return as StorageLocationSummary
+    let summary = StorageLocationSummary {
+        location_id: location.location_id,
+        name: location.name,
+        is_active: location.is_active,
+    };
+
+    Ok(created(summary))
 }
 
 #[cfg(test)]
@@ -143,6 +218,57 @@ mod tests {
 
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("\"is_active\":true"));
+        assert!(json.contains("\"is_active\":false"));
+    }
+
+    // Tests for CreateStorageLocation deserialization
+
+    #[test]
+    fn test_create_storage_location_deserialize() {
+        let json = r#"{"name": "Safe Drawer 1"}"#;
+        let input: CreateStorageLocation = serde_json::from_str(json).unwrap();
+        assert_eq!(input.name, "Safe Drawer 1");
+    }
+
+    #[test]
+    fn test_create_storage_location_deserialize_with_whitespace() {
+        let json = r#"{"name": "  Workbench A  "}"#;
+        let input: CreateStorageLocation = serde_json::from_str(json).unwrap();
+        assert_eq!(input.name, "  Workbench A  ");
+    }
+
+    #[test]
+    fn test_create_storage_location_missing_name() {
+        let json = r#"{}"#;
+        let result: Result<CreateStorageLocation, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    // Tests for StorageLocationSummary serialization
+
+    #[test]
+    fn test_storage_location_summary_serialization() {
+        let summary = StorageLocationSummary {
+            location_id: uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
+            name: "Display Case".to_string(),
+            is_active: true,
+        };
+
+        let json = serde_json::to_string(&summary).unwrap();
+        assert!(json.contains("\"location_id\":\"550e8400-e29b-41d4-a716-446655440000\""));
+        assert!(json.contains("\"name\":\"Display Case\""));
+        assert!(json.contains("\"is_active\":true"));
+    }
+
+    #[test]
+    fn test_storage_location_summary_serialization_inactive() {
+        let summary = StorageLocationSummary {
+            location_id: uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
+            name: "Old Storage".to_string(),
+            is_active: false,
+        };
+
+        let json = serde_json::to_string(&summary).unwrap();
         assert!(json.contains("\"is_active\":false"));
     }
 }
