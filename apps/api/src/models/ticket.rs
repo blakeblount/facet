@@ -146,6 +146,48 @@ pub struct TicketFilters {
     pub offset: Option<i64>,
 }
 
+/// Extended ticket summary for queue/workboard views.
+///
+/// Includes overdue calculation for visual indicators.
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct QueueTicket {
+    pub ticket_id: Uuid,
+    pub friendly_code: String,
+    pub customer_id: Uuid,
+    pub customer_name: String,
+    pub item_type: Option<String>,
+    pub item_description: String,
+    pub status: TicketStatus,
+    pub is_rush: bool,
+    pub promise_date: Option<NaiveDate>,
+    pub quote_amount: Option<Decimal>,
+    pub created_at: DateTime<Utc>,
+    /// True if promise_date is in the past and ticket is still open.
+    pub is_overdue: bool,
+}
+
+/// Search parameters for full-text ticket search.
+#[derive(Debug, Clone)]
+pub struct TicketSearchParams {
+    /// Search query string (searches across ticket, customer, and notes)
+    pub query: String,
+    /// Filter by statuses (empty = all statuses including archived)
+    pub statuses: Option<Vec<TicketStatus>>,
+    /// Limit results
+    pub limit: Option<i64>,
+    /// Offset for pagination
+    pub offset: Option<i64>,
+}
+
+/// Workboard queue response grouped by status lanes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkboardQueue {
+    pub intake: Vec<QueueTicket>,
+    pub in_progress: Vec<QueueTicket>,
+    pub waiting_on_parts: Vec<QueueTicket>,
+    pub ready_for_pickup: Vec<QueueTicket>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -176,5 +218,20 @@ mod tests {
 
         let parsed: TicketStatus = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, TicketStatus::WaitingOnParts);
+    }
+
+    #[test]
+    fn test_workboard_queue_serialization() {
+        let queue = WorkboardQueue {
+            intake: vec![],
+            in_progress: vec![],
+            waiting_on_parts: vec![],
+            ready_for_pickup: vec![],
+        };
+        let json = serde_json::to_string(&queue).unwrap();
+        assert!(json.contains("\"intake\":[]"));
+        assert!(json.contains("\"in_progress\":[]"));
+        assert!(json.contains("\"waiting_on_parts\":[]"));
+        assert!(json.contains("\"ready_for_pickup\":[]"));
     }
 }

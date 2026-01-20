@@ -1,7 +1,10 @@
 //! Ticket repository for database operations.
 
 use crate::error::AppError;
-use crate::models::ticket::{CreateTicket, Ticket, TicketFilters, TicketSummary, UpdateTicket};
+use crate::models::ticket::{
+    CreateTicket, QueueTicket, Ticket, TicketFilters, TicketSearchParams, TicketStatus,
+    TicketSummary, UpdateTicket, WorkboardQueue,
+};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -272,6 +275,226 @@ impl TicketRepository {
 
         Ok(count)
     }
+
+    /// Search tickets with full-text search across ticket, customer, and notes.
+    ///
+    /// Searches across:
+    /// - Ticket: friendly_code, item_type, item_description, condition_notes, requested_work
+    /// - Customer: name, phone, email
+    /// - Notes: content
+    ///
+    /// Returns tickets matching the search query, sorted by relevance then date.
+    pub async fn search(
+        pool: &PgPool,
+        params: TicketSearchParams,
+    ) -> Result<Vec<QueueTicket>, AppError> {
+        // Build status filter array if provided
+        let status_strings: Option<Vec<String>> = params
+            .statuses
+            .map(|statuses| statuses.iter().map(Self::status_to_string).collect());
+
+        // Use ILIKE for case-insensitive partial matching
+        // The % wildcards allow matching anywhere in the text
+        let search_pattern = format!("%{}%", params.query);
+
+        let tickets = sqlx::query_as::<_, QueueTicket>(
+            r#"
+            SELECT DISTINCT
+                t.ticket_id,
+                t.friendly_code,
+                t.customer_id,
+                c.name as customer_name,
+                t.item_type,
+                t.item_description,
+                t.status,
+                t.is_rush,
+                t.promise_date,
+                t.quote_amount,
+                t.created_at,
+                CASE
+                    WHEN t.promise_date IS NOT NULL
+                     AND t.promise_date < CURRENT_DATE
+                     AND t.status NOT IN ('closed', 'archived')
+                    THEN TRUE
+                    ELSE FALSE
+                END as is_overdue
+            FROM tickets t
+            JOIN customers c ON t.customer_id = c.customer_id
+            LEFT JOIN ticket_notes n ON t.ticket_id = n.ticket_id
+            WHERE (
+                t.friendly_code ILIKE $1
+                OR t.item_type ILIKE $1
+                OR t.item_description ILIKE $1
+                OR t.condition_notes ILIKE $1
+                OR t.requested_work ILIKE $1
+                OR c.name ILIKE $1
+                OR c.phone ILIKE $1
+                OR c.email ILIKE $1
+                OR n.content ILIKE $1
+            )
+            AND ($2::text[] IS NULL OR t.status::text = ANY($2))
+            ORDER BY
+                -- Prioritize exact friendly_code matches
+                CASE WHEN t.friendly_code ILIKE $1 THEN 0 ELSE 1 END,
+                -- Then by rush status
+                t.is_rush DESC,
+                -- Then by creation date (FIFO)
+                t.created_at ASC
+            LIMIT $3
+            OFFSET $4
+            "#,
+        )
+        .bind(&search_pattern)
+        .bind(&status_strings)
+        .bind(params.limit.unwrap_or(100))
+        .bind(params.offset.unwrap_or(0))
+        .fetch_all(pool)
+        .await?;
+
+        Ok(tickets)
+    }
+
+    /// Get the workboard queue with tickets grouped by status lane.
+    ///
+    /// Returns only active tickets (not closed/archived), sorted within each lane
+    /// by rush first, then FIFO (created_at ascending).
+    pub async fn get_queue(
+        pool: &PgPool,
+        limit_per_lane: Option<i64>,
+    ) -> Result<WorkboardQueue, AppError> {
+        // Fetch all active tickets in a single query, then group in memory
+        // This is efficient for typical workloads (~30 tickets/day)
+        let tickets = sqlx::query_as::<_, QueueTicket>(
+            r#"
+            SELECT
+                t.ticket_id,
+                t.friendly_code,
+                t.customer_id,
+                c.name as customer_name,
+                t.item_type,
+                t.item_description,
+                t.status,
+                t.is_rush,
+                t.promise_date,
+                t.quote_amount,
+                t.created_at,
+                CASE
+                    WHEN t.promise_date IS NOT NULL
+                     AND t.promise_date < CURRENT_DATE
+                     AND t.status NOT IN ('closed', 'archived')
+                    THEN TRUE
+                    ELSE FALSE
+                END as is_overdue
+            FROM tickets t
+            JOIN customers c ON t.customer_id = c.customer_id
+            WHERE t.status NOT IN ('closed', 'archived')
+            ORDER BY t.is_rush DESC, t.created_at ASC
+            "#,
+        )
+        .fetch_all(pool)
+        .await?;
+
+        // Group tickets by status
+        let limit = limit_per_lane.unwrap_or(100) as usize;
+
+        let mut intake = Vec::new();
+        let mut in_progress = Vec::new();
+        let mut waiting_on_parts = Vec::new();
+        let mut ready_for_pickup = Vec::new();
+
+        for ticket in tickets {
+            match ticket.status {
+                TicketStatus::Intake => {
+                    if intake.len() < limit {
+                        intake.push(ticket);
+                    }
+                }
+                TicketStatus::InProgress => {
+                    if in_progress.len() < limit {
+                        in_progress.push(ticket);
+                    }
+                }
+                TicketStatus::WaitingOnParts => {
+                    if waiting_on_parts.len() < limit {
+                        waiting_on_parts.push(ticket);
+                    }
+                }
+                TicketStatus::ReadyForPickup => {
+                    if ready_for_pickup.len() < limit {
+                        ready_for_pickup.push(ticket);
+                    }
+                }
+                // Closed and Archived are filtered out by the query
+                TicketStatus::Closed | TicketStatus::Archived => {}
+            }
+        }
+
+        Ok(WorkboardQueue {
+            intake,
+            in_progress,
+            waiting_on_parts,
+            ready_for_pickup,
+        })
+    }
+
+    /// Get tickets by status for a single lane.
+    ///
+    /// Returns tickets for the specified status, sorted by rush first, then FIFO.
+    /// Includes overdue calculation.
+    pub async fn get_lane(
+        pool: &PgPool,
+        status: TicketStatus,
+        limit: Option<i64>,
+    ) -> Result<Vec<QueueTicket>, AppError> {
+        let status_str = Self::status_to_string(&status);
+
+        let tickets = sqlx::query_as::<_, QueueTicket>(
+            r#"
+            SELECT
+                t.ticket_id,
+                t.friendly_code,
+                t.customer_id,
+                c.name as customer_name,
+                t.item_type,
+                t.item_description,
+                t.status,
+                t.is_rush,
+                t.promise_date,
+                t.quote_amount,
+                t.created_at,
+                CASE
+                    WHEN t.promise_date IS NOT NULL
+                     AND t.promise_date < CURRENT_DATE
+                     AND t.status NOT IN ('closed', 'archived')
+                    THEN TRUE
+                    ELSE FALSE
+                END as is_overdue
+            FROM tickets t
+            JOIN customers c ON t.customer_id = c.customer_id
+            WHERE t.status::text = $1
+            ORDER BY t.is_rush DESC, t.created_at ASC
+            LIMIT $2
+            "#,
+        )
+        .bind(&status_str)
+        .bind(limit.unwrap_or(100))
+        .fetch_all(pool)
+        .await?;
+
+        Ok(tickets)
+    }
+
+    /// Helper to convert TicketStatus to database string.
+    fn status_to_string(status: &TicketStatus) -> String {
+        match status {
+            TicketStatus::Intake => "intake".to_string(),
+            TicketStatus::InProgress => "in_progress".to_string(),
+            TicketStatus::WaitingOnParts => "waiting_on_parts".to_string(),
+            TicketStatus::ReadyForPickup => "ready_for_pickup".to_string(),
+            TicketStatus::Closed => "closed".to_string(),
+            TicketStatus::Archived => "archived".to_string(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -300,5 +523,61 @@ mod tests {
         assert!(update.item_type.is_none());
         assert!(update.item_description.is_none());
         assert!(update.is_rush.is_none());
+    }
+
+    #[test]
+    fn test_status_to_string() {
+        assert_eq!(
+            TicketRepository::status_to_string(&TicketStatus::Intake),
+            "intake"
+        );
+        assert_eq!(
+            TicketRepository::status_to_string(&TicketStatus::InProgress),
+            "in_progress"
+        );
+        assert_eq!(
+            TicketRepository::status_to_string(&TicketStatus::WaitingOnParts),
+            "waiting_on_parts"
+        );
+        assert_eq!(
+            TicketRepository::status_to_string(&TicketStatus::ReadyForPickup),
+            "ready_for_pickup"
+        );
+        assert_eq!(
+            TicketRepository::status_to_string(&TicketStatus::Closed),
+            "closed"
+        );
+        assert_eq!(
+            TicketRepository::status_to_string(&TicketStatus::Archived),
+            "archived"
+        );
+    }
+
+    #[test]
+    fn test_ticket_search_params() {
+        let params = TicketSearchParams {
+            query: "test".to_string(),
+            statuses: Some(vec![TicketStatus::Intake, TicketStatus::InProgress]),
+            limit: Some(50),
+            offset: Some(10),
+        };
+        assert_eq!(params.query, "test");
+        assert_eq!(params.statuses.as_ref().unwrap().len(), 2);
+        assert_eq!(params.limit, Some(50));
+        assert_eq!(params.offset, Some(10));
+    }
+
+    #[test]
+    fn test_ticket_search_params_no_filters() {
+        let params = TicketSearchParams {
+            query: "ring".to_string(),
+            statuses: None,
+            limit: None,
+            offset: None,
+        };
+        assert_eq!(params.query, "ring");
+        assert!(params.statuses.is_none());
+        assert!(params.limit.is_none());
+        assert!(params.offset.is_none());
     }
 }

@@ -10,4 +10,7 @@ pub mod ticket;
 pub use customer::{CreateCustomer, Customer};
 pub use employee::{Employee, EmployeeRole, EmployeeSummary};
 pub use status_history::{CreateStatusHistory, StatusHistoryEntry};
-pub use ticket::{CreateTicket, Ticket, TicketFilters, TicketStatus, TicketSummary, UpdateTicket};
+pub use ticket::{
+    CreateTicket, QueueTicket, Ticket, TicketFilters, TicketSearchParams, TicketStatus,
+    TicketSummary, UpdateTicket, WorkboardQueue,
+};
