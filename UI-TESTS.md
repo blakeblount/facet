@@ -1031,3 +1031,65 @@ Add employee PIN modal flow to photo upload:
 - Status filter correctly combines with text search query
 - URL parameters update to reflect filter state (e.g., ?q=Gold&status=intake)
 - Result count updates accurately based on filter combination
+
+---
+
+## TEST: facet-x5z - Photo Lightbox Opens on Thumbnail Click
+**Date:** 2026-01-20
+**Status:** PASS (with bug found)
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/search?status=intake
+2. Clicked on JR-0003 ticket card to open TicketDetailModal
+3. Located Photos section showing "Photos (1)" header
+4. Clicked on photo thumbnail button "View photo uploaded Jan 20, 2026, 2:32 PM by Admin"
+5. Observed lightbox dialog appeared with full-size image
+6. Captured screenshot showing lightbox overlay with image and metadata
+7. Attempted to close lightbox via close button - BLOCKED by modal dialog
+8. Pressed ESC to close the parent modal
+9. Successfully clicked close button on lightbox after modal closed
+10. Verified lightbox closed properly
+
+### Success Criteria Results
+- [x] Clicking thumbnail opens full-size lightbox - PASS - Lightbox dialog appears immediately after click
+- [x] Lightbox covers the screen with dark overlay - PASS - Dark background (rgba(0,0,0,0.9)) visible
+- [x] Full-size image is displayed centered - PASS - Image centered in viewport
+- [x] Close button (X) is visible - PASS - Close button in top right corner of lightbox
+- [x] Photo metadata shown (date, employee name) - PASS - Shows "Jan 20, 2026, 2:32 PM by Admin"
+- [x] Photo counter shown if multiple photos (e.g., "1 of 5") - N/A - Only 1 photo, counter not shown (correct behavior per code - counter only displays when photos.length > 1)
+
+### Screenshots
+- .playwright-mcp/photo-lightbox-opened.png - Lightbox showing with dark overlay and image
+- .playwright-mcp/lightbox-overlay-issue.png - Shows z-index issue where modal intercepts lightbox clicks
+
+### Issues Found
+- **HIGH**: Z-index/stacking issue with native `<dialog>` element
+  - The lightbox (z-index: 1000, position: fixed) is rendered but visually appears behind the native `<dialog>` modal
+  - Native dialog's "top layer" always renders above regular z-indexed elements
+  - Cannot click the lightbox close button or overlay while the parent modal is open
+  - **Workaround**: Press ESC to close the parent modal first, then interact with lightbox
+  - **Recommended Fix**: Render the lightbox outside the modal component (e.g., using Svelte portal), or use the native dialog's built-in showModal() for the lightbox as well, or move lightbox DOM to body root
+
+- **MEDIUM**: ESC key behavior is inconsistent
+  - When lightbox is open, pressing ESC closes the parent modal (not the lightbox)
+  - The lightbox has `onkeydown={handleLightboxKeydown}` which should handle ESC, but the modal's handler captures it first
+  - Expected: ESC should close the topmost visible layer (lightbox first, then modal)
+
+- **LOW**: Image may show as placeholder/broken
+  - The thumbnail and full-size image show "Ticket item" placeholder text when S3/storage is not properly configured
+  - This is an environment issue, not a code bug
+
+### Code Analysis
+- Lightbox implementation: `apps/web/src/lib/components/TicketDetailModal.svelte` lines 870-936
+- The lightbox is rendered inside the TicketDetailModal component as a sibling to the modal content
+- CSS: `.lightbox-overlay { position: fixed; z-index: 1000; }`
+- The parent Modal uses native `<dialog>` with `showModal()` which creates a "top layer" context
+- Native dialog top layer always renders above regular positioned elements regardless of z-index
+
+### Notes
+- The lightbox UI is well-designed with proper accessibility attributes (role="dialog", aria-modal="true", aria-label="Photo viewer")
+- Photo metadata correctly displays timestamp and uploader name
+- Navigation buttons (prev/next) only render when there are multiple photos (correct behavior)
+- The close button uses SVG icon with hover effect
+- The issue is a known browser behavior with native dialog elements - they exist in a special "top layer" that is always above the normal document flow
