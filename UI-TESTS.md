@@ -2400,3 +2400,59 @@ Theme implementation in `apps/web/src/lib/stores/theme.svelte.ts`:
 - The Imperial theme provides a clean, professional jewelry store aesthetic with navy blue header and elegant Playfair Display typography
 
 ---
+
+## TEST: facet-dpt - Storage Location Dropdown Loads Options
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/
+2. Clicked "+ New" button in Intake lane to open intake form modal
+3. Located the Storage Location dropdown field in the Repair Details section
+4. Observed the initial placeholder text "Select location"
+5. Clicked the dropdown button to expand the options list
+6. Verified 5 storage location options appeared from database
+7. Captured screenshot of open dropdown with all options visible
+8. Selected "Safe Drawer 1" option
+9. Verified dropdown closed and field now displays "Safe Drawer 1"
+10. Re-opened dropdown to verify selection indicator (checkmark)
+11. Captured screenshot showing checkmark next to selected option
+12. Selected different option "Workbench A" to test re-selection
+13. Verified field updated to show "Workbench A"
+14. Closed the intake form modal
+
+### Success Criteria Results
+- [x] Dropdown field is present and clickable - PASS - Button with "Select location" placeholder visible
+- [x] Clicking opens dropdown with options - PASS - Listbox appeared with 5 options
+- [x] Options are loaded from database (not empty) - PASS - 5 locations match API response exactly
+- [x] Each option shows location name - PASS - Display Case, Safe Drawer 1, Safe Drawer 2, Workbench A, Workbench B
+- [x] Inactive locations are either hidden or marked - PASS - API only returns active locations (is_active: true)
+- [x] Selecting an option populates the field - PASS - Field text updates to show selected location name
+- [x] Dropdown closes after selection - PASS - Listbox disappears after clicking an option
+
+### Screenshots
+- .playwright-mcp/storage-location-dropdown-open.png - Dropdown expanded showing all 5 options
+- .playwright-mcp/storage-location-selected.png - Field showing "Safe Drawer 1" after selection
+- .playwright-mcp/storage-location-dropdown-with-selection.png - Dropdown re-opened with checkmark on selected item
+
+### Technical Details
+Storage location loading is implemented in `apps/web/src/lib/components/IntakeFormModal.svelte`:
+- Locations fetched via `listStorageLocations(false)` when modal opens
+- API endpoint: GET `/api/v1/locations` returns active locations by default
+- Custom `Select.svelte` component renders accessible listbox dropdown
+- Selected state tracked via `storageLocationId` reactive variable
+- Checkmark icon (SVG) displayed next to selected option when dropdown reopened
+- Field is required (marked with *) and validated before form submission
+
+### Issues Found
+- None
+
+### Notes
+- The dropdown uses a custom accessible Select component with ARIA attributes (role="listbox", aria-expanded, aria-selected)
+- Loading state handled with placeholder text "Loading..." while fetching locations
+- The component filters to show only active locations (inactive locations are excluded by API)
+- Keyboard navigation is supported (ArrowUp/Down, Enter, Escape) per the Select component implementation
+- Storage location is a required field - form validation will fail if not selected
+
+---
