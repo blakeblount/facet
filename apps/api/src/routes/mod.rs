@@ -82,7 +82,10 @@ pub fn api_router(state: AppState) -> Router {
 
     // Employee routes
     let employees_routes = Router::new()
-        .route("/", post(handlers::create_employee))
+        .route(
+            "/",
+            get(handlers::list_employees).post(handlers::create_employee),
+        )
         .route(
             "/{employee_id}",
             put(handlers::update_employee).delete(handlers::delete_employee),

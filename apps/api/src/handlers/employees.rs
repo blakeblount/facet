@@ -1,7 +1,7 @@
 //! Employee request handlers.
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::HeaderMap,
     response::IntoResponse,
     Json,
@@ -36,6 +36,53 @@ async fn verify_admin_pin_header(state: &AppState, headers: &HeaderMap) -> Resul
     }
 
     Ok(())
+}
+
+// =============================================================================
+// GET /employees (admin) - List Employees
+// =============================================================================
+
+/// Query parameters for listing employees.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ListEmployeesQuery {
+    /// Include inactive employees in the list.
+    /// Defaults to false (only active employees returned).
+    #[serde(default)]
+    pub include_inactive: bool,
+}
+
+/// Response for listing employees.
+#[derive(Debug, Clone, Serialize)]
+pub struct ListEmployeesResponse {
+    /// List of employees
+    pub employees: Vec<EmployeeSummary>,
+    /// Total count of employees returned
+    pub count: usize,
+}
+
+/// GET /api/v1/employees - List all employees (admin only).
+///
+/// Requires X-Admin-PIN header for authorization.
+/// Returns a list of employees (without pin_hash).
+/// By default only active employees are returned.
+/// Use `?include_inactive=true` to include inactive employees.
+pub async fn list_employees(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ListEmployeesQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    // Verify admin PIN
+    verify_admin_pin_header(&state, &headers).await?;
+
+    // Fetch employees from repository
+    let employees = EmployeeRepository::list(&state.db, query.include_inactive).await?;
+
+    let response = ListEmployeesResponse {
+        count: employees.len(),
+        employees,
+    };
+
+    Ok(Json(ApiResponse::success(response)))
 }
 
 // =============================================================================
@@ -452,5 +499,73 @@ mod tests {
         assert!(json.contains("\"deleted\":true"));
         assert!(json.contains("\"warning\":"));
         assert!(json.contains("5 attribution(s)"));
+    }
+
+    // Tests for ListEmployeesQuery deserialization
+
+    #[test]
+    fn test_list_employees_query_deserialize_empty() {
+        let json = r#"{}"#;
+        let query: ListEmployeesQuery = serde_json::from_str(json).unwrap();
+        // include_inactive should default to false
+        assert!(!query.include_inactive);
+    }
+
+    #[test]
+    fn test_list_employees_query_deserialize_include_inactive_true() {
+        let json = r#"{"include_inactive": true}"#;
+        let query: ListEmployeesQuery = serde_json::from_str(json).unwrap();
+        assert!(query.include_inactive);
+    }
+
+    #[test]
+    fn test_list_employees_query_deserialize_include_inactive_false() {
+        let json = r#"{"include_inactive": false}"#;
+        let query: ListEmployeesQuery = serde_json::from_str(json).unwrap();
+        assert!(!query.include_inactive);
+    }
+
+    // Tests for ListEmployeesResponse serialization
+
+    #[test]
+    fn test_list_employees_response_serialization_empty() {
+        let response = ListEmployeesResponse {
+            employees: vec![],
+            count: 0,
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"employees\":[]"));
+        assert!(json.contains("\"count\":0"));
+    }
+
+    #[test]
+    fn test_list_employees_response_serialization_with_employees() {
+        let response = ListEmployeesResponse {
+            employees: vec![
+                EmployeeSummary {
+                    employee_id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
+                    name: "Alice".to_string(),
+                    role: EmployeeRole::Staff,
+                    is_active: true,
+                },
+                EmployeeSummary {
+                    employee_id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440001").unwrap(),
+                    name: "Bob".to_string(),
+                    role: EmployeeRole::Admin,
+                    is_active: true,
+                },
+            ],
+            count: 2,
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"count\":2"));
+        assert!(json.contains("\"name\":\"Alice\""));
+        assert!(json.contains("\"name\":\"Bob\""));
+        assert!(json.contains("\"role\":\"staff\""));
+        assert!(json.contains("\"role\":\"admin\""));
+        // Should NOT contain pin_hash
+        assert!(!json.contains("pin_hash"));
     }
 }
