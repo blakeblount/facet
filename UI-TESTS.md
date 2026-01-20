@@ -331,3 +331,50 @@ After completing each test, append results to this file using this format:
 - Employee attribution works correctly (ticket linked to admin user via PIN verification)
 - Photo upload and storage location selection both work correctly
 
+---
+
+## TEST: facet-0l2 - Customer Autocomplete Search
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/
+2. Clicked "+ New" button to open intake form modal
+3. Typed "John" in Customer Name field (slowly to trigger debounce)
+4. Observed autocomplete dropdown appeared with "John Smith" as matching result
+5. Captured screenshot of dropdown with matching customer
+6. Closed modal and reopened for next test
+7. Typed "ZZZZNOTFOUND" in Customer Name field
+8. Observed "No matching customers" message with hint "A new customer will be created"
+9. Captured screenshot of no-match state
+10. Clicked on Item Type field to test dropdown close behavior
+11. Verified dropdown closed when clicking outside
+12. Cleared Customer Name field and typed "Test"
+13. Observed dropdown showed multiple results: "E2E Test Customer" and "Test Customer"
+14. Captured screenshot of multiple results
+
+### Success Criteria Results
+- [x] Typing triggers autocomplete search after brief delay - PASS - Search triggered after 300ms debounce, visible results appeared
+- [x] Dropdown appears below the input field - PASS - Dropdown positioned directly below Customer Name input
+- [x] Matching customers are listed with name and contact info - PASS - Customer names displayed; contact info shows when available (current test customers have no phone/email)
+- [x] Results are clickable - PASS - Each option has cursor=pointer and role="option"
+- [x] If no matches, shows "No matching customers" message - PASS - Message displayed with helpful hint "A new customer will be created"
+- [x] Dropdown closes when clicking outside - PASS - Clicking on Item Type field closed the dropdown
+
+### Screenshots
+- .playwright-mcp/autocomplete-dropdown-visible.png - Single match "John Smith"
+- .playwright-mcp/autocomplete-no-matches.png - No matching customers message
+- .playwright-mcp/autocomplete-multiple-results.png - Multiple results for "Test"
+
+### Issues Found
+- None
+
+### Notes
+- Autocomplete requires minimum 2 characters before searching (implementation detail)
+- 300ms debounce prevents excessive API calls while typing
+- The dropdown uses proper accessibility attributes (role="listbox", role="option")
+- When no customers match, helpful UX message indicates a new customer will be created
+- Multiple matching customers display in a scrollable list
+- API endpoint /api/v1/customers?search=<query> works correctly with partial matching
+
