@@ -847,3 +847,51 @@ Add employee PIN modal flow to photo upload:
 - The test required manual status change via API to set up preconditions (no tickets were in "Ready for Pickup" status initially)
 - Accessing the TicketDetailModal requires using the Search page; workboard ticket cards navigate to placeholder page
 
+---
+
+## TEST: facet-uwd - Intake Form Field Display
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/
+2. Clicked "+ New" button in Intake lane to open intake form modal
+3. Modal opened with title "New Repair Ticket"
+4. Examined all form sections: Customer Information, Item Details, Repair Details, Photos
+5. Verified each field's presence, type, and required markers
+6. Clicked Storage Location dropdown to verify options load correctly
+7. Verified dropdown shows 5 locations (Display Case, Safe Drawer 1/2, Workbench A/B)
+
+### Success Criteria Results
+- [x] Customer Name field is present (text input with autocomplete) - PASS - Textbox with placeholder "Search or enter customer name", autocomplete dropdown implemented
+- [x] Phone field is present (tel input) - PASS - Input type="tel" with placeholder "(555) 123-4567"
+- [x] Email field is present (email input) - PASS - Input type="email" with placeholder "customer@example.com"
+- [x] Item Type field is present (text input) - PASS - Textbox with placeholder "e.g., Ring, Necklace, Watch"
+- [x] Item Description field is present (text input, required) - PASS - Textbox marked with *, placeholder "Describe the item"
+- [x] Condition Notes field is present (textarea, required) - PASS - Textarea component with 3 rows, marked with *, placeholder "Describe the current condition of the item"
+- [x] Requested Work field is present (textarea, required) - PASS - Textarea component with 3 rows, marked with *, placeholder "Describe the work to be done"
+- [x] Rush checkbox is present with toggle styling - PASS - Checkbox with "Rush Order" label and "Prioritize this repair over others" description
+- [x] Promise Date field is present (date picker) - PASS - Input type="date" present
+- [x] Storage Location dropdown is present (required) - PASS - Dropdown marked with *, loads 5 options on click
+- [x] Quote Amount field is present (number input) - PASS - Spinbutton (number input) present
+- [x] Photo upload area is present (required) - PASS - Upload area with "Item Photos *" label, shows "Up to 10 images, max 10.0 MB each"
+- [x] Submit button is visible - PASS - "Create & Print" button visible at bottom of form
+
+### Screenshots
+- .playwright-mcp/intake-form-fields-test-top.png - Modal showing Customer Information and Item Details sections
+- .playwright-mcp/intake-form-fields-scrolled.png - Modal view of form
+
+### Issues Found
+- None - All required fields are present and correctly configured
+
+### Notes
+- The form is well-organized into 4 logical sections: Customer Information, Item Details, Repair Details, Photos
+- Required fields are clearly marked with asterisk (*) indicators
+- All text inputs have helpful placeholder text
+- Condition Notes and Requested Work use Textarea component (multi-line) for longer input
+- Customer autocomplete searches existing customers and shows helpful message "A new customer will be created" when no matches found
+- Storage Location dropdown lazy-loads options on click
+- Form buttons include Cancel (to close modal) and Create & Print (to submit)
+- Close modal (X) button available in header
+
