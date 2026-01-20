@@ -78,10 +78,14 @@ pub fn api_router(state: AppState) -> Router {
     // Queue route
     let queue_route = Router::new().route("/", get(handlers::get_queue));
 
+    // Employee routes
+    let employees_routes = Router::new().route("/verify", post(handlers::verify_employee_pin));
+
     // API v1 routes
     let api_v1 = Router::new()
         .nest("/tickets", tickets_routes)
-        .nest("/queue", queue_route);
+        .nest("/queue", queue_route)
+        .nest("/employees", employees_routes);
 
     Router::new()
         .route("/health", axum::routing::get(health::health_check))
