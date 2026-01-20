@@ -8,10 +8,13 @@
 		createEmployee,
 		updateEmployee,
 		deleteEmployee,
+		getStoreSettings,
+		updateStoreSettings,
 		ApiClientError,
 		type VerifyPinResponse,
 		type EmployeeSummary,
-		type EmployeeRole
+		type EmployeeRole,
+		type StoreSettings
 	} from '$lib/services/api';
 
 	type SettingsTab = 'store-info' | 'employees' | 'locations' | 'appearance';
@@ -53,6 +56,19 @@
 	let deleteConfirmEmployee: EmployeeSummary | null = $state(null);
 	let deleteError = $state('');
 	let deleteLoading = $state(false);
+
+	// Store info tab state
+	let storeSettings: StoreSettings | null = $state(null);
+	let storeInfoLoading = $state(false);
+	let storeInfoError = $state('');
+	let storeInfoSaving = $state(false);
+	let storeInfoSuccess = $state('');
+
+	// Store info form state (editable copies)
+	let storeFormName = $state('');
+	let storeFormPhone = $state('');
+	let storeFormAddress = $state('');
+	let storeFormTicketPrefix = $state('');
 
 	// Tab state
 	let activeTab: SettingsTab = $state('store-info');
@@ -96,6 +112,14 @@
 			deleteConfirmEmployee = null;
 			deleteError = '';
 			deleteLoading = false;
+
+			// Reset store info state
+			storeSettings = null;
+			storeInfoLoading = false;
+			storeInfoError = '';
+			storeInfoSaving = false;
+			storeInfoSuccess = '';
+			resetStoreInfoForm();
 		}
 	});
 
@@ -173,6 +197,97 @@
 	function focusTab(tabId: SettingsTab) {
 		const tabEl = document.querySelector(`[data-tab-id="${tabId}"]`) as HTMLElement | null;
 		tabEl?.focus();
+	}
+
+	// =============================================================================
+	// Store Info Tab Functions
+	// =============================================================================
+
+	function resetStoreInfoForm() {
+		storeFormName = '';
+		storeFormPhone = '';
+		storeFormAddress = '';
+		storeFormTicketPrefix = '';
+	}
+
+	function populateStoreInfoForm(settings: StoreSettings) {
+		storeFormName = settings.store_name;
+		storeFormPhone = settings.store_phone ?? '';
+		storeFormAddress = settings.store_address ?? '';
+		storeFormTicketPrefix = settings.ticket_prefix;
+	}
+
+	async function loadStoreSettings() {
+		storeInfoLoading = true;
+		storeInfoError = '';
+		storeInfoSuccess = '';
+
+		try {
+			const settings = await getStoreSettings();
+			storeSettings = settings;
+			populateStoreInfoForm(settings);
+		} catch (err) {
+			if (err instanceof ApiClientError) {
+				storeInfoError = err.message || 'Failed to load store settings';
+			} else {
+				storeInfoError = 'An error occurred while loading settings';
+			}
+		} finally {
+			storeInfoLoading = false;
+		}
+	}
+
+	// Load store settings when store-info tab becomes active
+	$effect(() => {
+		if (isAuthenticated && activeTab === 'store-info' && !storeSettings && !storeInfoLoading) {
+			loadStoreSettings();
+		}
+	});
+
+	async function handleSaveStoreInfo() {
+		if (!adminPin) return;
+
+		// Validate required fields
+		if (!storeFormName.trim()) {
+			storeInfoError = 'Store name is required';
+			return;
+		}
+
+		if (!storeFormTicketPrefix.trim()) {
+			storeInfoError = 'Ticket prefix is required';
+			return;
+		}
+
+		storeInfoSaving = true;
+		storeInfoError = '';
+		storeInfoSuccess = '';
+
+		try {
+			const updates = {
+				store_name: storeFormName.trim(),
+				store_phone: storeFormPhone.trim() || undefined,
+				store_address: storeFormAddress.trim() || undefined,
+				ticket_prefix: storeFormTicketPrefix.trim()
+			};
+
+			const updatedSettings = await updateStoreSettings(adminPin, updates);
+			storeSettings = updatedSettings;
+			populateStoreInfoForm(updatedSettings);
+			storeInfoSuccess = 'Settings saved successfully';
+
+			// Clear success message after 3 seconds
+			setTimeout(() => {
+				storeInfoSuccess = '';
+			}, 3000);
+		} catch (err) {
+			if (err instanceof ApiClientError) {
+				storeInfoError = err.message || 'Failed to save settings';
+			} else {
+				storeInfoError = 'An error occurred while saving settings';
+			}
+		} finally {
+			storeInfoSaving = false;
+		}
 	}
 
 	// =============================================================================
@@ -415,11 +530,75 @@
 						class:active={activeTab === 'store-info'}
 						hidden={activeTab !== 'store-info'}
 					>
-						<div class="panel-placeholder">
-							<h3 class="placeholder-title">Store Information</h3>
-							<p class="placeholder-text">
-								Store name, address, and contact details will be configurable here.
-							</p>
+						<div class="store-info-panel">
+							<h3 class="panel-title">Store Information</h3>
+
+							{#if storeInfoError}
+								<div class="store-info-message error">{storeInfoError}</div>
+							{/if}
+
+							{#if storeInfoSuccess}
+								<div class="store-info-message success">{storeInfoSuccess}</div>
+							{/if}
+
+							{#if storeInfoLoading}
+								<div class="store-info-loading">Loading settings...</div>
+							{:else}
+								<form
+									class="store-info-form"
+									onsubmit={(e) => {
+										e.preventDefault();
+										handleSaveStoreInfo();
+									}}
+								>
+									<div class="store-info-fields">
+										<Input
+											label="Store Name"
+											placeholder="Enter store name"
+											bind:value={storeFormName}
+											disabled={storeInfoSaving}
+											required
+										/>
+
+										<Input
+											label="Phone Number"
+											type="tel"
+											placeholder="(555) 555-5555"
+											bind:value={storeFormPhone}
+											disabled={storeInfoSaving}
+										/>
+
+										<Input
+											label="Address"
+											placeholder="123 Main St, City, State ZIP"
+											bind:value={storeFormAddress}
+											disabled={storeInfoSaving}
+										/>
+
+										<Input
+											label="Ticket Prefix"
+											placeholder="JR"
+											bind:value={storeFormTicketPrefix}
+											disabled={storeInfoSaving}
+											required
+										/>
+										<p class="field-hint">
+											The prefix used for ticket IDs (e.g., "JR" for JR-9F3K2)
+										</p>
+									</div>
+
+									<div class="store-info-actions">
+										<Button
+											variant="primary"
+											type="submit"
+											loading={storeInfoSaving}
+											disabled={storeInfoSaving}
+										>
+											Save Changes
+										</Button>
+									</div>
+								</form>
+							{/if}
 						</div>
 					</div>
 
@@ -806,6 +985,64 @@
 
 	.authenticated-user strong {
 		color: var(--color-text, #1e293b);
+	}
+
+	/* Store Info Panel */
+	.store-info-panel {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-md, 1rem);
+		padding: var(--space-sm, 0.5rem) 0;
+	}
+
+	.store-info-message {
+		padding: var(--space-sm, 0.5rem) var(--space-md, 1rem);
+		border-radius: var(--radius-sm, 0.25rem);
+		font-size: 0.875rem;
+	}
+
+	.store-info-message.error {
+		background-color: var(--color-danger-light, #fef2f2);
+		border: 1px solid var(--color-danger, #dc2626);
+		color: var(--color-danger, #dc2626);
+	}
+
+	.store-info-message.success {
+		background-color: var(--color-success-light, #f0fdf4);
+		border: 1px solid var(--color-success, #16a34a);
+		color: var(--color-success, #16a34a);
+	}
+
+	.store-info-loading {
+		text-align: center;
+		padding: var(--space-lg, 1.5rem);
+		color: var(--color-text-muted, #64748b);
+		font-size: 0.875rem;
+	}
+
+	.store-info-form {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-md, 1rem);
+	}
+
+	.store-info-fields {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-md, 1rem);
+	}
+
+	.field-hint {
+		margin: calc(var(--space-xs, 0.25rem) * -1) 0 0;
+		font-size: 0.75rem;
+		color: var(--color-text-muted, #64748b);
+		line-height: 1.4;
+	}
+
+	.store-info-actions {
+		display: flex;
+		justify-content: flex-end;
+		padding-top: var(--space-sm, 0.5rem);
 	}
 
 	/* Employees Panel */

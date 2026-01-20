@@ -448,10 +448,31 @@ export interface StorageLocation {
 // =============================================================================
 
 /**
- * Store settings entity.
+ * Store settings entity (public view without admin PIN hash).
  */
 export interface StoreSettings {
+	setting_id: string;
 	store_name: string;
 	store_phone: string | null;
 	store_address: string | null;
+	ticket_prefix: string;
+	next_ticket_number: number;
+	currency: string;
+	max_photos_per_ticket: number;
+	setup_complete: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+/**
+ * Request to update store settings.
+ * All fields are optional - only provided fields will be updated.
+ */
+export interface UpdateStoreSettingsRequest {
+	store_name?: string;
+	store_phone?: string;
+	store_address?: string;
+	ticket_prefix?: string;
+	currency?: string;
+	max_photos_per_ticket?: number;
 }

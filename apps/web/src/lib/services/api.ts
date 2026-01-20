@@ -29,6 +29,7 @@ import type {
 	VerifyPinResponse,
 	StorageLocation,
 	StoreSettings,
+	UpdateStoreSettingsRequest,
 	CreateEmployeeRequest,
 	UpdateEmployeeRequest,
 	ListEmployeesResponse,
@@ -590,15 +591,30 @@ export async function listStorageLocations(): Promise<StorageLocation[]> {
 }
 
 // =============================================================================
-// Store Settings Endpoints (Placeholder - not yet implemented in backend)
+// Store Settings Endpoints
 // =============================================================================
 
 /**
  * Get store settings.
- * Note: This endpoint is not yet implemented in the backend.
+ * Public endpoint - does not require authentication.
  */
 export async function getStoreSettings(): Promise<StoreSettings> {
 	return get<StoreSettings>('/settings');
+}
+
+/**
+ * Update store settings.
+ * Requires admin PIN authentication.
+ *
+ * @param adminPin - Admin PIN for authentication
+ * @param updates - Partial store settings to update
+ * @returns Updated store settings
+ */
+export async function updateStoreSettings(
+	adminPin: string,
+	updates: UpdateStoreSettingsRequest
+): Promise<StoreSettings> {
+	return put<StoreSettings>('/settings', updates, adminPin);
 }
 
 // =============================================================================
@@ -724,6 +740,7 @@ export type {
 	VerifyPinResponse,
 	StorageLocation,
 	StoreSettings,
+	UpdateStoreSettingsRequest,
 	EmployeeAttribution,
 	TicketCustomer,
 	TicketStorageLocation,
