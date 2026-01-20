@@ -13,7 +13,7 @@
 mod health;
 
 use axum::{
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use sqlx::postgres::PgPool;
@@ -69,7 +69,11 @@ pub fn api_router(state: AppState) -> Router {
         .route("/{ticket_id}/label.pdf", get(handlers::get_label_pdf))
         .route("/{ticket_id}/status", post(handlers::change_status))
         .route("/{ticket_id}/close", post(handlers::close_ticket))
-        .route("/{ticket_id}/photos", post(handlers::upload_photo));
+        .route("/{ticket_id}/photos", post(handlers::upload_photo))
+        .route(
+            "/{ticket_id}/photos/{photo_id}",
+            delete(handlers::delete_photo),
+        );
 
     // Queue route
     let queue_route = Router::new().route("/", get(handlers::get_queue));

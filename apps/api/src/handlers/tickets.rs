@@ -1406,6 +1406,108 @@ pub async fn upload_photo(
     Ok((StatusCode::CREATED, Json(ApiResponse::success(response))))
 }
 
+// =============================================================================
+// DELETE /tickets/:ticket_id/photos/:photo_id - Delete Photo (Admin Only)
+// =============================================================================
+
+/// Path parameters for photo deletion.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeletePhotoPath {
+    pub ticket_id: Uuid,
+    pub photo_id: Uuid,
+}
+
+/// Response for a deleted photo.
+#[derive(Debug, Clone, Serialize)]
+pub struct DeletePhotoResponse {
+    /// The ID of the deleted photo
+    pub photo_id: Uuid,
+    /// The ticket ID the photo belonged to
+    pub ticket_id: Uuid,
+}
+
+/// Extract admin PIN from X-Admin-PIN header.
+fn extract_admin_pin(headers: &HeaderMap) -> Result<String, AppError> {
+    let header_value = headers
+        .get("X-Admin-PIN")
+        .ok_or_else(|| AppError::validation("X-Admin-PIN header is required"))?;
+
+    header_value
+        .to_str()
+        .map(|s| s.to_string())
+        .map_err(|_| AppError::validation("Invalid X-Admin-PIN header value"))
+}
+
+/// Verify the admin PIN against an admin employee.
+///
+/// Returns the admin employee if PIN is valid.
+async fn verify_admin_employee(
+    pool: &sqlx::PgPool,
+    pin: &str,
+) -> Result<crate::models::Employee, AppError> {
+    use crate::auth::verify_pin;
+    use crate::models::EmployeeRole;
+
+    // Get all active employees for PIN verification
+    let employees = EmployeeRepository::find_active_for_pin_verification(pool).await?;
+
+    // Find an admin employee whose PIN matches
+    for employee in employees {
+        if employee.role == EmployeeRole::Admin && verify_pin(pin, &employee.pin_hash)? {
+            return Ok(employee);
+        }
+    }
+
+    Err(AppError::invalid_pin("Invalid admin PIN"))
+}
+
+/// DELETE /api/v1/tickets/:ticket_id/photos/:photo_id - Delete a photo (admin only).
+///
+/// Requires X-Admin-PIN header for authorization.
+/// Deletes the photo from S3 storage and the database.
+pub async fn delete_photo(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(path): Path<DeletePhotoPath>,
+) -> Result<impl IntoResponse, AppError> {
+    // 1. Extract and verify admin PIN
+    let admin_pin = extract_admin_pin(&headers)?;
+    let _admin = verify_admin_employee(&state.db, &admin_pin).await?;
+
+    // 2. Verify ticket exists
+    let _ticket = TicketRepository::find_by_id(&state.db, path.ticket_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Ticket not found"))?;
+
+    // 3. Find the photo
+    let photo = TicketPhotoRepository::find_by_id(&state.db, path.photo_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Photo not found"))?;
+
+    // 4. Verify photo belongs to the ticket
+    if photo.ticket_id != path.ticket_id {
+        return Err(AppError::not_found("Photo not found on this ticket"));
+    }
+
+    // 5. Delete from S3 storage (if storage is configured)
+    if let Some(storage) = &state.storage {
+        storage.delete(&photo.storage_key).await.map_err(|e| {
+            AppError::server_error(format!("Failed to delete photo from storage: {}", e))
+        })?;
+    }
+
+    // 6. Delete database record
+    TicketPhotoRepository::delete(&state.db, path.photo_id).await?;
+
+    // 7. Return success response
+    let response = DeletePhotoResponse {
+        photo_id: path.photo_id,
+        ticket_id: path.ticket_id,
+    };
+
+    Ok(Json(ApiResponse::success(response)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1918,5 +2020,37 @@ mod tests {
         assert!(json.contains("\"status\":\"closed\""));
         assert!(json.contains("\"actual_amount\":\"145.00\""));
         assert!(json.contains("\"previous_status\":\"ready_for_pickup\""));
+    }
+
+    #[test]
+    fn test_delete_photo_path_deserialize() {
+        let ticket_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let photo_id = Uuid::parse_str("660e8400-e29b-41d4-a716-446655440000").unwrap();
+
+        let path = DeletePhotoPath {
+            ticket_id,
+            photo_id,
+        };
+
+        assert_eq!(
+            path.ticket_id,
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap()
+        );
+        assert_eq!(
+            path.photo_id,
+            Uuid::parse_str("660e8400-e29b-41d4-a716-446655440000").unwrap()
+        );
+    }
+
+    #[test]
+    fn test_delete_photo_response_serialization() {
+        let response = DeletePhotoResponse {
+            photo_id: Uuid::parse_str("660e8400-e29b-41d4-a716-446655440000").unwrap(),
+            ticket_id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"photo_id\":\"660e8400-e29b-41d4-a716-446655440000\""));
+        assert!(json.contains("\"ticket_id\":\"550e8400-e29b-41d4-a716-446655440000\""));
     }
 }
