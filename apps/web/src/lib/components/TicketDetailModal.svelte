@@ -1,6 +1,15 @@
 <script lang="ts">
 	import Modal from './Modal.svelte';
-	import { getTicket, type TicketDetailResponse, type TicketStatus } from '$lib/services/api';
+	import Button from './Button.svelte';
+	import Input from './Input.svelte';
+	import {
+		getTicket,
+		getReceiptPdfUrl,
+		getLabelPdfUrl,
+		closeTicket,
+		type TicketDetailResponse,
+		type TicketStatus
+	} from '$lib/services/api';
 
 	interface Props {
 		/** The ticket ID to display */
@@ -11,13 +20,25 @@
 		onClose: () => void;
 		/** Whether editing mode is enabled (shows edit indicators) */
 		isEditing?: boolean;
+		/** Callback when edit mode is requested */
+		onEdit?: () => void;
+		/** Callback when ticket is closed successfully */
+		onTicketClosed?: () => void;
 	}
 
-	let { ticketId, open, onClose, isEditing = false }: Props = $props();
+	let { ticketId, open, onClose, isEditing = false, onEdit, onTicketClosed }: Props = $props();
 
 	let ticket: TicketDetailResponse | null = $state(null);
 	let loading: boolean = $state(false);
 	let error: string | null = $state(null);
+
+	// Close ticket flow state
+	let showCloseModal: boolean = $state(false);
+	let closeStep: 'amount' | 'employee' = $state('amount');
+	let actualAmount: string = $state('');
+	let employeePin: string = $state('');
+	let closeError: string | null = $state(null);
+	let isClosing: boolean = $state(false);
 
 	// Fetch ticket when ticketId changes and modal is open
 	$effect(() => {
@@ -95,6 +116,84 @@
 			archived: 'status-closed'
 		};
 		return classes[status];
+	}
+
+	// Action handlers
+	function handleEditTicket() {
+		onEdit?.();
+	}
+
+	function handlePrintReceipt() {
+		if (!ticket) return;
+		const url = getReceiptPdfUrl(ticket.ticket_id);
+		window.open(url, '_blank');
+	}
+
+	function handlePrintTag() {
+		if (!ticket) return;
+		const url = getLabelPdfUrl(ticket.ticket_id);
+		window.open(url, '_blank');
+	}
+
+	function openCloseModal() {
+		// Reset close flow state
+		closeStep = 'amount';
+		actualAmount = ticket?.quote_amount ?? '';
+		employeePin = '';
+		closeError = null;
+		showCloseModal = true;
+	}
+
+	function closeCloseModal() {
+		showCloseModal = false;
+	}
+
+	function handleAmountSubmit() {
+		if (!actualAmount.trim()) {
+			closeError = 'Please enter the actual amount charged';
+			return;
+		}
+		// Validate it's a valid number
+		const amount = parseFloat(actualAmount);
+		if (isNaN(amount) || amount < 0) {
+			closeError = 'Please enter a valid amount';
+			return;
+		}
+		closeError = null;
+		closeStep = 'employee';
+	}
+
+	async function handleEmployeeSubmit() {
+		if (!employeePin.trim()) {
+			closeError = 'Please enter your employee PIN';
+			return;
+		}
+		if (!ticket) return;
+
+		isClosing = true;
+		closeError = null;
+
+		try {
+			await closeTicket(ticket.ticket_id, actualAmount);
+			showCloseModal = false;
+			onTicketClosed?.();
+			// Refresh the ticket to show updated status
+			await fetchTicket(ticket.ticket_id);
+		} catch (e) {
+			closeError = e instanceof Error ? e.message : 'Failed to close ticket';
+		} finally {
+			isClosing = false;
+		}
+	}
+
+	// Check if ticket can be closed (only Ready for Pickup status)
+	function canCloseTicket(): boolean {
+		return ticket?.status === 'ready_for_pickup';
+	}
+
+	// Check if ticket is already closed/archived
+	function isTicketClosed(): boolean {
+		return ticket?.status === 'closed' || ticket?.status === 'archived';
 	}
 </script>
 
@@ -351,12 +450,78 @@
 				</div>
 			</section>
 
-			<!-- Actions placeholder (to be implemented in facet-5w6) -->
+			<!-- Action Buttons -->
 			<section class="detail-section actions-section">
-				<div class="actions-placeholder">
-					<!-- Action buttons will be added by facet-5w6 -->
+				<div class="actions-row">
+					{#if !isTicketClosed()}
+						<Button variant="secondary" onclick={handleEditTicket}>Edit Ticket</Button>
+					{/if}
+					<Button variant="secondary" onclick={handlePrintReceipt}>Print Receipt</Button>
+					<Button variant="secondary" onclick={handlePrintTag}>Print Tag</Button>
+					{#if canCloseTicket()}
+						<Button variant="primary" onclick={openCloseModal}>Close Ticket</Button>
+					{/if}
 				</div>
 			</section>
+		{/if}
+	</div>
+</Modal>
+
+<!-- Close Ticket Modal -->
+<Modal open={showCloseModal} title="Close Ticket" onClose={closeCloseModal}>
+	<div class="close-ticket-modal">
+		{#if closeStep === 'amount'}
+			<form
+				onsubmit={(e) => {
+					e.preventDefault();
+					handleAmountSubmit();
+				}}
+			>
+				<p class="close-modal-description">Enter the actual amount charged for this repair.</p>
+				<Input
+					label="Actual Amount"
+					type="number"
+					placeholder="0.00"
+					bind:value={actualAmount}
+					error={closeError ?? undefined}
+					required
+				/>
+				<div class="close-modal-actions">
+					<Button variant="secondary" onclick={closeCloseModal}>Cancel</Button>
+					<Button variant="primary" type="submit">Next</Button>
+				</div>
+			</form>
+		{:else}
+			<form
+				onsubmit={(e) => {
+					e.preventDefault();
+					handleEmployeeSubmit();
+				}}
+			>
+				<p class="close-modal-description">
+					Enter your employee PIN to confirm closing this ticket.
+				</p>
+				<Input
+					label="Employee PIN"
+					type="password"
+					placeholder="Enter PIN"
+					bind:value={employeePin}
+					error={closeError ?? undefined}
+					required
+				/>
+				<div class="close-modal-actions">
+					<Button
+						variant="secondary"
+						onclick={() => {
+							closeStep = 'amount';
+							closeError = null;
+						}}
+					>
+						Back
+					</Button>
+					<Button variant="primary" type="submit" loading={isClosing}>Close Ticket</Button>
+				</div>
+			</form>
 		{/if}
 	</div>
 </Modal>
@@ -615,14 +780,36 @@
 		font-style: italic;
 	}
 
-	/* Actions placeholder */
+	/* Actions section */
 	.actions-section {
 		margin-top: var(--space-lg, 1.5rem);
 		padding-top: var(--space-md, 1rem);
 		border-top: 1px solid var(--color-border, #e2e8f0);
 	}
 
-	.actions-placeholder {
-		min-height: 0;
+	.actions-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-sm, 0.5rem);
+	}
+
+	/* Close ticket modal */
+	.close-ticket-modal {
+		width: 320px;
+		max-width: 90vw;
+	}
+
+	.close-modal-description {
+		margin: 0 0 var(--space-md, 1rem);
+		font-size: 0.875rem;
+		color: var(--color-text-muted, #64748b);
+		line-height: 1.5;
+	}
+
+	.close-modal-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: var(--space-sm, 0.5rem);
+		margin-top: var(--space-lg, 1.5rem);
 	}
 </style>
