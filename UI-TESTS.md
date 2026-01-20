@@ -1138,3 +1138,51 @@ Add employee PIN modal flow to photo upload:
 - Overdue styling takes precedence over Rush styling when both conditions apply
 - Item descriptions are truncated to 60 characters with ellipsis
 - Cards navigate to ticket detail page on click (currently a placeholder page)
+
+---
+
+## TEST: facet-z9l - Filter by Date Range
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/search
+2. Verified search page loaded with Status filter, From Date picker, and To Date picker
+3. Clicked From Date picker - calendar opened with current month (January 2026)
+4. Selected January 19, 2026 as From Date - date displayed as "Mon, Jan 19, 2026"
+5. Clicked To Date picker - calendar opened with dates before Jan 19 disabled
+6. Selected January 21, 2026 as To Date - date displayed as "Wed, Jan 21, 2026"
+7. Clicked Search button
+8. Results showed "Found 3 tickets" (all 3 tickets created on Jan 20)
+9. Changed From Date to Jan 1 and To Date to Jan 10 (date range with no tickets)
+10. Searched again - results showed "Found 0 tickets" with "No tickets found with the current filters"
+11. Tested combined filters: date range (Jan 19-21) + status (Intake) + search query ("gold")
+12. Results correctly showed 1 ticket matching all criteria (JR-0003)
+13. Tested Clear Filters button - both date pickers reset to placeholder text
+
+### Success Criteria Results
+- [x] From Date picker opens and allows date selection - PASS - Calendar popup opens with month navigation, day selection, and "Today" button
+- [x] To Date picker opens and allows date selection - PASS - Same functionality as From Date picker
+- [x] Results are filtered to the specified date range - PASS - Date range Jan 19-21 returned all 3 tickets created on Jan 20; date range Jan 1-10 returned 0 tickets
+- [x] Only tickets created within the range are shown - PASS - Verified by testing with a date range that excludes all tickets
+- [x] To Date must be >= From Date (validation) - PASS - When From Date is set, To Date picker disables all dates before it; when To Date is set, From Date picker disables all dates after it
+- [x] Can combine date filter with other filters - PASS - Combined date range + status + search query correctly narrowed results from 3 to 1 ticket
+
+### Screenshots
+- .playwright-mcp/date-picker-calendar-open.png - Calendar showing selected date with disabled dates after To Date
+- .playwright-mcp/date-range-filter-combined.png - Search results with combined filters (date range + status + search query)
+
+### Issues Found
+- None - Date range filter functionality works correctly
+
+### Notes
+- DatePicker is a custom calendar component with full accessibility support (role="grid", role="gridcell", aria-labels for dates)
+- Calendar shows previous/next month dates in lighter text (other-month styling)
+- Selected date is highlighted with dark blue background
+- Today's date (Jan 20) is shown in blue text with "Today" button for quick selection
+- Bi-directional date validation: From Date limits To Date options, and To Date limits From Date options
+- Date format in button displays as "Day, Mon DD, YYYY" (e.g., "Mon, Jan 19, 2026")
+- URL parameters correctly reflect filter state: `?q=gold&status=intake&from_date=2026-01-19&to_date=2026-01-21`
+- Clear Filters button resets both date pickers to placeholder state
+- Keyboard navigation supported: Escape closes picker, arrow keys navigate dates
