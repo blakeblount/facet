@@ -3,6 +3,7 @@
 use crate::error::AppError;
 use crate::models::status_history::{CreateStatusHistory, StatusHistoryEntry};
 use sqlx::PgPool;
+use uuid::Uuid;
 
 /// Repository for status history database operations.
 pub struct StatusHistoryRepository;
@@ -28,6 +29,28 @@ impl StatusHistoryRepository {
         .await?;
 
         Ok(entry)
+    }
+
+    /// Find all status history entries for a ticket.
+    ///
+    /// Returns entries ordered by changed_at descending (most recent first).
+    pub async fn find_by_ticket_id(
+        pool: &PgPool,
+        ticket_id: Uuid,
+    ) -> Result<Vec<StatusHistoryEntry>, AppError> {
+        let entries = sqlx::query_as::<_, StatusHistoryEntry>(
+            r#"
+            SELECT history_id, ticket_id, from_status, to_status, changed_by, changed_at
+            FROM ticket_status_history
+            WHERE ticket_id = $1
+            ORDER BY changed_at DESC
+            "#,
+        )
+        .bind(ticket_id)
+        .fetch_all(pool)
+        .await?;
+
+        Ok(entries)
     }
 }
 
