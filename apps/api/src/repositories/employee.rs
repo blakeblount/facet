@@ -1,7 +1,10 @@
 //! Employee repository for database operations.
 
+use crate::auth::hash_pin;
 use crate::error::AppError;
-use crate::models::employee::Employee;
+use crate::models::employee::{
+    CreateEmployee, Employee, EmployeeRole, EmployeeSummary, UpdateEmployee,
+};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -9,6 +12,29 @@ use uuid::Uuid;
 pub struct EmployeeRepository;
 
 impl EmployeeRepository {
+    /// Create a new employee.
+    ///
+    /// The PIN is hashed before storage using argon2.
+    pub async fn create(pool: &PgPool, input: CreateEmployee) -> Result<Employee, AppError> {
+        let pin_hash = hash_pin(&input.pin)?;
+        let role = input.role.unwrap_or(EmployeeRole::Staff);
+
+        let employee = sqlx::query_as::<_, Employee>(
+            r#"
+            INSERT INTO employees (name, pin_hash, role)
+            VALUES ($1, $2, $3)
+            RETURNING *
+            "#,
+        )
+        .bind(&input.name)
+        .bind(&pin_hash)
+        .bind(role)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(employee)
+    }
+
     /// Find an employee by ID.
     ///
     /// Returns None if not found or if employee is inactive.
@@ -37,6 +63,121 @@ impl EmployeeRepository {
         let employee = sqlx::query_as::<_, Employee>(
             r#"
             SELECT * FROM employees WHERE employee_id = $1
+            "#,
+        )
+        .bind(employee_id)
+        .fetch_optional(pool)
+        .await?;
+
+        Ok(employee)
+    }
+
+    /// Find an active employee by PIN for verification.
+    ///
+    /// Returns all active employees - the caller must verify the PIN
+    /// against each one since we can't compare argon2 hashes directly in SQL.
+    /// This is intentional for security - we don't expose a direct PIN lookup.
+    pub async fn find_active_for_pin_verification(
+        pool: &PgPool,
+    ) -> Result<Vec<Employee>, AppError> {
+        let employees = sqlx::query_as::<_, Employee>(
+            r#"
+            SELECT * FROM employees WHERE is_active = TRUE
+            "#,
+        )
+        .fetch_all(pool)
+        .await?;
+
+        Ok(employees)
+    }
+
+    /// List employees with optional filtering.
+    ///
+    /// If include_inactive is false (default), only active employees are returned.
+    pub async fn list(
+        pool: &PgPool,
+        include_inactive: bool,
+    ) -> Result<Vec<EmployeeSummary>, AppError> {
+        let employees = if include_inactive {
+            sqlx::query_as::<_, EmployeeSummary>(
+                r#"
+                SELECT employee_id, name, role, is_active
+                FROM employees
+                ORDER BY name ASC
+                "#,
+            )
+            .fetch_all(pool)
+            .await?
+        } else {
+            sqlx::query_as::<_, EmployeeSummary>(
+                r#"
+                SELECT employee_id, name, role, is_active
+                FROM employees
+                WHERE is_active = TRUE
+                ORDER BY name ASC
+                "#,
+            )
+            .fetch_all(pool)
+            .await?
+        };
+
+        Ok(employees)
+    }
+
+    /// Update an employee.
+    ///
+    /// Only the provided fields are updated.
+    /// If PIN is provided, it's hashed before storage.
+    pub async fn update(
+        pool: &PgPool,
+        employee_id: Uuid,
+        input: UpdateEmployee,
+    ) -> Result<Option<Employee>, AppError> {
+        // First check if employee exists
+        let existing = Self::find_by_id(pool, employee_id).await?;
+        if existing.is_none() {
+            return Ok(None);
+        }
+        let existing = existing.unwrap();
+
+        // Build update with provided fields, keeping existing values for unspecified fields
+        let name = input.name.unwrap_or(existing.name);
+        let pin_hash = match input.pin {
+            Some(pin) => hash_pin(&pin)?,
+            None => existing.pin_hash,
+        };
+        let role = input.role.unwrap_or(existing.role);
+        let is_active = input.is_active.unwrap_or(existing.is_active);
+
+        let employee = sqlx::query_as::<_, Employee>(
+            r#"
+            UPDATE employees
+            SET name = $1, pin_hash = $2, role = $3, is_active = $4, updated_at = NOW()
+            WHERE employee_id = $5
+            RETURNING *
+            "#,
+        )
+        .bind(&name)
+        .bind(&pin_hash)
+        .bind(role)
+        .bind(is_active)
+        .bind(employee_id)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(Some(employee))
+    }
+
+    /// Soft-delete an employee by setting is_active to false.
+    ///
+    /// Returns the updated employee, or None if not found.
+    pub async fn delete(pool: &PgPool, employee_id: Uuid) -> Result<Option<Employee>, AppError> {
+        let employee = sqlx::query_as::<_, Employee>(
+            r#"
+            UPDATE employees
+            SET is_active = FALSE, updated_at = NOW()
+            WHERE employee_id = $1
+            RETURNING *
             "#,
         )
         .bind(employee_id)

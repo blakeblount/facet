@@ -174,6 +174,14 @@ impl From<sqlx::Error> for AppError {
     }
 }
 
+/// Convert from HashError to AppError.
+impl From<crate::auth::HashError> for AppError {
+    fn from(err: crate::auth::HashError) -> Self {
+        tracing::error!("Hash error: {:?}", err);
+        AppError::server_error("Password hashing error")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

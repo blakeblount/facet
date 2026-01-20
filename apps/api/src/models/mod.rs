@@ -9,7 +9,7 @@ pub mod status_history;
 pub mod ticket;
 
 pub use customer::{CreateCustomer, Customer};
-pub use employee::{Employee, EmployeeRole, EmployeeSummary};
+pub use employee::{CreateEmployee, Employee, EmployeeRole, EmployeeSummary, UpdateEmployee};
 pub use field_history::{CreateFieldHistory, FieldHistoryEntry};
 pub use status_history::{CreateStatusHistory, StatusHistoryEntry};
 pub use ticket::{
