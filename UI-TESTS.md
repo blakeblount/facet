@@ -986,3 +986,48 @@ Add employee PIN modal flow to photo upload:
 - Results include status badge with appropriate color coding (intake = blue)
 - The fix required restructuring the SQL query from a simple SELECT DISTINCT to a CTE-based approach
 - All API tests pass after the fix (204 tests)
+
+---
+
+## TEST: facet-1fs - Filter by Status
+**Date:** 2026-01-20
+**Status:** PASS
+**Agent:** Claude Opus 4.5
+
+### Steps Executed
+1. Navigated to http://localhost:5173/search
+2. Verified search page loaded with Status filter dropdown showing "All Statuses"
+3. Clicked Status dropdown button - dropdown expanded showing all status options
+4. Selected "In Progress" from dropdown
+5. Clicked "Search" button
+6. Observed results: "Found 1 ticket" - JR-0002 with status badge "in progress"
+7. Clicked Status dropdown again, selected "Closed"
+8. Clicked "Search" button
+9. Observed results: "Found 1 ticket" - JR-0001 with status badge "closed"
+10. Selected "All Statuses" and searched with query "Gold"
+11. Observed results: "Found 3 tickets matching 'Gold'" showing all 3 tickets with different statuses
+12. Selected "Intake" filter with "Gold" query
+13. Observed results: "Found 1 ticket matching 'Gold'" - JR-0003 with status badge "intake"
+
+### Success Criteria Results
+- [x] Status dropdown shows all options (All, Intake, In Progress, Waiting, Ready, Closed, Archived) - PASS - All 7 options visible in dropdown
+- [x] Selecting a status filters results - PASS - Results change based on selected status
+- [x] "In Progress" filter shows only in-progress tickets - PASS - Returned only JR-0002 (in_progress status)
+- [x] "Closed" filter shows only closed tickets - PASS - Returned only JR-0001 (closed status)
+- [x] All results have matching status badges - PASS - Each result card displays correct status badge
+- [x] "All Statuses" shows tickets of any status - PASS - With "Gold" query, returned all 3 tickets regardless of status
+
+### Screenshots
+- .playwright-mcp/ui-test-status-filter.png - Search page showing Intake filter with "Gold" query returning 1 result
+
+### Issues Found
+- None - Status filter functionality works correctly
+
+### Notes
+- Status dropdown uses proper accessibility attributes (role="listbox", role="option")
+- Selected status shows checkmark icon in dropdown
+- "Clear Filters" button appears when any filter is applied
+- Search with no query and "All Statuses" prompts user to "Enter a search term or apply filters"
+- Status filter correctly combines with text search query
+- URL parameters update to reflect filter state (e.g., ?q=Gold&status=intake)
+- Result count updates accurately based on filter combination
