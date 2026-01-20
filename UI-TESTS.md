@@ -2225,3 +2225,66 @@ The navigation links ("Workboard", "Search") do not have visual styling to indic
 - The missing active indicator is a UX enhancement, not a functional bug
 - All navigation is client-side (SvelteKit routing) - fast and smooth
 - Settings icon uses a gear SVG which clearly indicates its purpose
+
+---
+
+## TEST: facet-a9d - Status badges have correct colors
+**Date:** 2026-01-20
+**Status:** PASS (with bug fix)
+**Theme:** Imperial (active during test)
+
+### Steps Executed
+1. ✅ Navigated to workboard at http://localhost:5173
+2. ✅ Observed status lane headers and count badges
+3. ✅ Navigated to search page
+4. ✅ Searched for "JR" to get tickets in various statuses
+5. ✅ Observed status badges in search results
+6. ✅ Opened detail modal for "Waiting on Parts" ticket
+7. ✅ Observed status badges in modal header and status history
+8. ✅ Opened detail modal for "Closed" ticket
+9. ✅ Verified all status colors
+
+### Success Criteria Results
+- [x] Intake status badge is purple/violet (#6b5b95)
+- [x] In Progress status badge is blue (#1e3a5f)
+- [x] Waiting on Parts status badge is amber/gold (#d4a017)
+- [x] Ready for Pickup status badge is green (#2d5a3d)
+- [x] Closed/Archived status badge is gray (#6b6b6b)
+- [x] Colors are consistent across workboard, search, and detail modal
+- [x] Colors provide clear visual differentiation
+
+### Issues Found
+**Bug Fixed: Search page status badge classes were incorrect**
+
+The search page was generating incorrect CSS class names for statuses with multiple underscores:
+- `waiting_on_parts` became `status-waiting-on_parts` (incorrect)
+- `ready_for_pickup` became `status-ready-for_pickup` (incorrect)
+
+This caused "Waiting on Parts" and "Ready for Pickup" badges to not display their colored backgrounds.
+
+**Root Cause:** Line 132 in `apps/web/src/routes/search/+page.svelte` used `.replace('_', '-')` which only replaces the first underscore.
+
+**Fix Applied:** Changed to `.replace(/_/g, '-')` to replace all underscores globally.
+
+**Location:** `apps/web/src/routes/search/+page.svelte:132`
+
+### Technical Details
+Status badge colors are defined using CSS custom properties in `apps/web/src/app.css`:
+- `--color-intake: #8b5cf6` (default) / `#6b5b95` (imperial)
+- `--color-in-progress: #3b82f6` (default) / `#1e3a5f` (imperial)
+- `--color-waiting: #f59e0b` (default) / `#d4a017` (imperial)
+- `--color-ready: #10b981` (default) / `#2d5a3d` (imperial)
+- `--color-closed: #6b7280` (default) / `#6b6b6b` (imperial)
+
+These are applied via global CSS classes (`.status-intake`, `.status-in-progress`, etc.) defined in `apps/web/src/app.css` (lines 268-295).
+
+### Screenshots
+- `status-badges-workboard.png` - Workboard showing lane status colors
+- `status-badges-search-fixed.png` - Search results with correct badge colors (after fix)
+- `status-badges-modal.png` - Detail modal showing "Waiting on Parts" status
+- `status-badges-modal-closed.png` - Detail modal showing "Closed" status
+
+### Notes
+- The test was run with Imperial theme active, which uses different color values than the default theme
+- All three themes (default, imperial, arcane) define the same color variables with theme-appropriate values
+- The bug fix ensures status badges display correctly for all status types across the application

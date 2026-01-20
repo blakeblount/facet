@@ -129,7 +129,7 @@
 						>
 							<div class="result-header">
 								<span class="ticket-code">{ticket.friendly_code}</span>
-								<span class="ticket-status status-{ticket.status.replace('_', '-')}">
+								<span class="ticket-status status-{ticket.status.replace(/_/g, '-')}">
 									{ticket.status.replace(/_/g, ' ')}
 								</span>
 							</div>
