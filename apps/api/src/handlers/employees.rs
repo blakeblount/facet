@@ -183,6 +183,66 @@ pub async fn update_employee(
     }
 }
 
+// =============================================================================
+// DELETE /employees/:employee_id (admin) - Delete Employee
+// =============================================================================
+
+/// Response for employee deletion.
+#[derive(Debug, Clone, Serialize)]
+pub struct DeleteEmployeeResponse {
+    /// Whether the employee was deleted
+    pub deleted: bool,
+    /// Warning message if the employee had attribution history
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
+}
+
+/// DELETE /api/v1/employees/:employee_id - Delete an employee (admin only).
+///
+/// Requires X-Admin-PIN header for authorization.
+/// Checks for attribution history and includes a warning if history exists.
+/// Performs a hard delete (employee is permanently removed).
+///
+/// Returns success with optional warning about history loss.
+pub async fn delete_employee(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(employee_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    // Verify admin PIN
+    verify_admin_pin_header(&state, &headers).await?;
+
+    // Check if employee exists
+    let employee = EmployeeRepository::find_by_id(&state.db, employee_id).await?;
+    if employee.is_none() {
+        return Err(AppError::not_found("Employee not found"));
+    }
+
+    // Check for attribution history
+    let attribution_count = EmployeeRepository::count_attributions(&state.db, employee_id).await?;
+
+    // Build warning message if attributions exist
+    let warning = if attribution_count > 0 {
+        Some(format!(
+            "Employee had {} attribution(s) in history. This data has been deleted.",
+            attribution_count
+        ))
+    } else {
+        None
+    };
+
+    // Perform hard delete
+    let deleted = EmployeeRepository::hard_delete(&state.db, employee_id).await?;
+
+    if !deleted {
+        return Err(AppError::not_found("Employee not found"));
+    }
+
+    let response = DeleteEmployeeResponse { deleted, warning };
+
+    Ok(Json(ApiResponse::success(response)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -362,5 +422,35 @@ mod tests {
         assert_eq!(input.pin, Some("5678".to_string()));
         assert_eq!(input.role, Some(EmployeeRole::Staff));
         assert_eq!(input.is_active, Some(true));
+    }
+
+    // Tests for DeleteEmployeeResponse serialization
+
+    #[test]
+    fn test_delete_employee_response_serialization_no_warning() {
+        let response = DeleteEmployeeResponse {
+            deleted: true,
+            warning: None,
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"deleted\":true"));
+        // warning should be omitted when None
+        assert!(!json.contains("warning"));
+    }
+
+    #[test]
+    fn test_delete_employee_response_serialization_with_warning() {
+        let response = DeleteEmployeeResponse {
+            deleted: true,
+            warning: Some(
+                "Employee had 5 attribution(s) in history. This data has been deleted.".to_string(),
+            ),
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"deleted\":true"));
+        assert!(json.contains("\"warning\":"));
+        assert!(json.contains("5 attribution(s)"));
     }
 }

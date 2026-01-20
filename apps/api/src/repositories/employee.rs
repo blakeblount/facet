@@ -186,6 +186,52 @@ impl EmployeeRepository {
 
         Ok(employee)
     }
+
+    /// Check if an employee has any attribution history.
+    ///
+    /// Returns the count of attributions across all tables that reference this employee.
+    pub async fn count_attributions(pool: &PgPool, employee_id: Uuid) -> Result<i64, AppError> {
+        let count = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT
+                COALESCE(
+                    (SELECT COUNT(*) FROM tickets WHERE taken_in_by = $1) +
+                    (SELECT COUNT(*) FROM tickets WHERE worked_by = $1) +
+                    (SELECT COUNT(*) FROM tickets WHERE closed_by = $1) +
+                    (SELECT COUNT(*) FROM tickets WHERE last_modified_by = $1) +
+                    (SELECT COUNT(*) FROM ticket_photos WHERE uploaded_by = $1) +
+                    (SELECT COUNT(*) FROM ticket_notes WHERE created_by = $1) +
+                    (SELECT COUNT(*) FROM ticket_status_history WHERE changed_by = $1) +
+                    (SELECT COUNT(*) FROM ticket_field_history WHERE changed_by = $1),
+                    0
+                )
+            "#,
+        )
+        .bind(employee_id)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(count)
+    }
+
+    /// Hard-delete an employee from the database.
+    ///
+    /// WARNING: This will fail if there are foreign key references to this employee.
+    /// The caller should check attribution history and handle accordingly.
+    ///
+    /// Returns true if deleted, false if not found.
+    pub async fn hard_delete(pool: &PgPool, employee_id: Uuid) -> Result<bool, AppError> {
+        let result = sqlx::query(
+            r#"
+            DELETE FROM employees WHERE employee_id = $1
+            "#,
+        )
+        .bind(employee_id)
+        .execute(pool)
+        .await?;
+
+        Ok(result.rows_affected() > 0)
+    }
 }
 
 #[cfg(test)]
