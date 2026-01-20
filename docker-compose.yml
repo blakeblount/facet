@@ -1,0 +1,24 @@
+# Facet Development Environment
+# Usage: docker compose up -d db
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: facet_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: facet_dev
+      POSTGRES_USER: facet
+      POSTGRES_PASSWORD: facet_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - facet_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U facet -d facet_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  facet_postgres_data:
