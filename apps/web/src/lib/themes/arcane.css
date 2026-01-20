@@ -1,0 +1,417 @@
+/**
+ * Arcane Theme - Fantasy-inspired pixel art aesthetic with steampunk undertones
+ *
+ * Think classic RPG inventory screens and brass clockwork mechanisms.
+ * Crisp, nostalgic, and atmospheric.
+ *
+ * Color Palette:
+ * - Background: Aged parchment #2D2A24
+ * - Surface: Dark leather #3D3830
+ * - Primary: Polished brass #B8860B
+ * - Accent: Arcane teal #4A9B9B
+ * - Text: Parchment white #E8DCC4
+ */
+
+/* Google Fonts imports - Pixel fonts for retro aesthetic */
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Silkscreen:wght@400;700&family=Pixelify+Sans:wght@400;500;600;700&display=swap');
+
+/* =============================================================================
+   Arcane Theme Variables
+   ============================================================================= */
+
+[data-theme='arcane'] {
+	/* Typography - Pixel fonts per spec */
+	--font-heading: 'Press Start 2P', 'VT323', monospace;
+	--font-sans: 'Pixelify Sans', 'Silkscreen', system-ui, sans-serif;
+	--font-mono: 'VT323', 'Press Start 2P', ui-monospace, monospace;
+
+	/* Primary palette - Polished brass */
+	--color-primary: #b8860b;
+	--color-primary-dark: #9a7209;
+	--color-primary-light: #d4a032;
+
+	/* Accent - Arcane teal */
+	--color-accent: #4a9b9b;
+	--color-accent-dark: #3a7a7a;
+	--color-accent-light: #5cb5b5;
+
+	/* Backgrounds - Dark, aged aesthetic */
+	--color-background: #2d2a24;
+	--color-surface: #3d3830;
+	--color-foreground: #e8dcc4;
+	--color-muted: #a89880;
+	--color-border: #5a5347;
+
+	/* Legacy aliases for compatibility */
+	--color-bg: #2d2a24;
+	--color-bg-card: #3d3830;
+	--color-text: #e8dcc4;
+	--color-text-muted: #a89880;
+
+	/* Status colors - Arcane palette */
+	--color-status-intake: #6b5b95;
+	--color-status-in-progress: #b8860b;
+	--color-status-waiting: #daa520;
+	--color-status-ready: #2e8b57;
+	--color-status-closed: #6b6b6b;
+
+	/* Legacy status aliases */
+	--color-intake: #6b5b95;
+	--color-in-progress: #b8860b;
+	--color-waiting: #daa520;
+	--color-ready: #2e8b57;
+	--color-closed: #6b6b6b;
+
+	/* Semantic colors */
+	--color-success: #2e8b57;
+	--color-warning: #daa520;
+	--color-error: #8b0000;
+
+	/* Rush indicator - Magical cyan for fantasy feel */
+	--color-rush: #00ced1;
+
+	/* Shadows - Inner shadows for inset panel feel */
+	--shadow-sm: inset 0 1px 2px 0 rgb(0 0 0 / 0.3);
+	--shadow-md: inset 0 2px 4px 0 rgb(0 0 0 / 0.4), 0 1px 0 0 rgb(255 255 255 / 0.05);
+	--shadow-lg: inset 0 3px 6px 0 rgb(0 0 0 / 0.5), 0 1px 0 0 rgb(255 255 255 / 0.08);
+
+	/* Border radius - Sharp corners (0-2px per spec) */
+	--radius-sm: 0;
+	--radius-md: 2px;
+	--radius-lg: 2px;
+
+	/* Spacing scale */
+	--spacing-xs: 0.25rem;
+	--spacing-sm: 0.5rem;
+	--spacing-md: 1rem;
+	--spacing-lg: 1.5rem;
+	--spacing-xl: 2rem;
+	--spacing-header: 60px;
+
+	/* Legacy spacing aliases */
+	--space-xs: 0.25rem;
+	--space-sm: 0.5rem;
+	--space-md: 1rem;
+	--space-lg: 1.5rem;
+	--space-xl: 2rem;
+
+	/* Layout */
+	--max-width-content: 1600px;
+	--max-content-width: 1600px;
+	--header-height: 60px;
+
+	/* Transitions - Snappier for pixel aesthetic */
+	--transition-fast: 100ms steps(2);
+	--transition-normal: 150ms steps(3);
+}
+
+/* =============================================================================
+   Arcane Theme Styles
+   ============================================================================= */
+
+[data-theme='arcane'] {
+	font-family: var(--font-sans);
+	color: var(--color-text);
+	background-color: var(--color-bg);
+	image-rendering: pixelated;
+}
+
+/* Typography - Pixel headings per spec */
+[data-theme='arcane'] h1,
+[data-theme='arcane'] h2,
+[data-theme='arcane'] h3,
+[data-theme='arcane'] h4,
+[data-theme='arcane'] h5,
+[data-theme='arcane'] h6 {
+	font-family: var(--font-heading);
+	font-weight: 400;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+	text-shadow: 2px 2px 0 rgb(0 0 0 / 0.5);
+}
+
+/* Smaller headings use VT323 for better readability */
+[data-theme='arcane'] h4,
+[data-theme='arcane'] h5,
+[data-theme='arcane'] h6 {
+	font-family: 'VT323', var(--font-heading);
+	font-size: 1.25em;
+}
+
+/* Monospace for ticket codes */
+[data-theme='arcane'] .ticket-code,
+[data-theme='arcane'] code,
+[data-theme='arcane'] pre {
+	font-family: var(--font-mono);
+	text-shadow: 1px 1px 0 rgb(0 0 0 / 0.5);
+}
+
+/* Header styling - Dark with brass accents */
+[data-theme='arcane'] .app-header {
+	background-color: #1a1816;
+	border-bottom: 2px solid var(--color-primary);
+	box-shadow: 0 2px 0 rgb(0 0 0 / 0.5);
+}
+
+/* Logo with pixel font */
+[data-theme='arcane'] .logo-text {
+	font-family: var(--font-heading);
+	letter-spacing: 0.1em;
+	text-shadow: 2px 2px 0 rgb(0 0 0 / 0.7);
+}
+
+/* Links - Brass colored */
+[data-theme='arcane'] a {
+	color: var(--color-primary);
+	text-decoration: none;
+}
+
+[data-theme='arcane'] a:hover {
+	color: var(--color-primary-light);
+	text-shadow: 0 0 4px var(--color-primary);
+}
+
+/* Buttons - Pixel-perfect with brass borders */
+[data-theme='arcane'] .btn-primary {
+	background-color: var(--color-primary);
+	color: #1a1816;
+	border: 2px solid var(--color-primary-dark);
+	border-radius: var(--radius-md);
+	box-shadow:
+		inset -2px -2px 0 rgb(0 0 0 / 0.3),
+		inset 2px 2px 0 rgb(255 255 255 / 0.2);
+	font-family: var(--font-sans);
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+
+[data-theme='arcane'] .btn-primary:hover {
+	background-color: var(--color-primary-light);
+	box-shadow:
+		inset -2px -2px 0 rgb(0 0 0 / 0.4),
+		inset 2px 2px 0 rgb(255 255 255 / 0.3);
+}
+
+[data-theme='arcane'] .btn-primary:active {
+	box-shadow:
+		inset 2px 2px 0 rgb(0 0 0 / 0.4),
+		inset -2px -2px 0 rgb(255 255 255 / 0.1);
+}
+
+[data-theme='arcane'] .btn-accent {
+	background-color: var(--color-accent);
+	color: #1a1816;
+	border: 2px solid var(--color-accent-dark);
+	border-radius: var(--radius-md);
+	box-shadow:
+		inset -2px -2px 0 rgb(0 0 0 / 0.3),
+		inset 2px 2px 0 rgb(255 255 255 / 0.2);
+}
+
+[data-theme='arcane'] .btn-accent:hover {
+	background-color: var(--color-accent-light);
+}
+
+/* Cards - Dark leather panels with pixel borders */
+[data-theme='arcane'] .card {
+	background-color: var(--color-surface);
+	border: 2px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	box-shadow: var(--shadow-md);
+}
+
+[data-theme='arcane'] .card:hover {
+	border-color: var(--color-primary);
+	box-shadow: 0 0 8px rgb(184 134 11 / 0.3);
+}
+
+/* Status badges - Pixel style */
+[data-theme='arcane'] .status-intake {
+	background-color: var(--color-intake);
+	color: var(--color-text);
+	border: 1px solid #5a4b7a;
+}
+
+[data-theme='arcane'] .status-in-progress {
+	background-color: var(--color-in-progress);
+	color: #1a1816;
+	border: 1px solid var(--color-primary-dark);
+}
+
+[data-theme='arcane'] .status-waiting {
+	background-color: var(--color-waiting);
+	color: #1a1816;
+	border: 1px solid #b8920d;
+}
+
+[data-theme='arcane'] .status-ready {
+	background-color: var(--color-ready);
+	color: var(--color-text);
+	border: 1px solid #1f6b3f;
+}
+
+[data-theme='arcane'] .status-closed {
+	background-color: var(--color-closed);
+	color: var(--color-text);
+	border: 1px solid #4a4a4a;
+}
+
+/* Rush indicator - Magical cyan glow */
+[data-theme='arcane'] .is-rush {
+	border-left: 4px solid var(--color-rush);
+	box-shadow: inset 4px 0 8px rgb(0 206 209 / 0.2);
+}
+
+[data-theme='arcane'] .rush-badge {
+	background-color: var(--color-rush);
+	color: #1a1816;
+	font-weight: 700;
+	text-shadow: none;
+	animation: arcane-pulse 2s ease-in-out infinite;
+}
+
+@keyframes arcane-pulse {
+	0%,
+	100% {
+		box-shadow: 0 0 4px var(--color-rush);
+	}
+	50% {
+		box-shadow:
+			0 0 12px var(--color-rush),
+			0 0 20px rgb(0 206 209 / 0.5);
+	}
+}
+
+/* Form inputs - Dark panels with brass focus */
+[data-theme='arcane'] input,
+[data-theme='arcane'] textarea,
+[data-theme='arcane'] select {
+	background-color: #252320;
+	border: 2px solid var(--color-border);
+	border-radius: var(--radius-md);
+	color: var(--color-text);
+	box-shadow: var(--shadow-sm);
+}
+
+[data-theme='arcane'] input::placeholder,
+[data-theme='arcane'] textarea::placeholder {
+	color: var(--color-muted);
+}
+
+[data-theme='arcane'] input:focus,
+[data-theme='arcane'] textarea:focus,
+[data-theme='arcane'] select:focus {
+	outline: none;
+	border-color: var(--color-primary);
+	box-shadow:
+		0 0 0 2px rgb(184 134 11 / 0.3),
+		var(--shadow-sm);
+}
+
+/* Modal styling - Dark panel with brass frame */
+[data-theme='arcane'] .modal {
+	background-color: var(--color-surface);
+	border: 3px solid var(--color-primary);
+	border-radius: var(--radius-lg);
+	box-shadow:
+		0 0 0 1px var(--color-primary-dark),
+		0 8px 32px rgb(0 0 0 / 0.7);
+}
+
+[data-theme='arcane'] .modal-backdrop {
+	background-color: rgb(0 0 0 / 0.8);
+}
+
+/* Table styling - Parchment style */
+[data-theme='arcane'] table {
+	border-collapse: collapse;
+	border: 2px solid var(--color-border);
+}
+
+[data-theme='arcane'] th {
+	font-family: var(--font-sans);
+	font-weight: 700;
+	text-align: left;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	background-color: #252320;
+	border-bottom: 2px solid var(--color-primary);
+	color: var(--color-primary);
+}
+
+[data-theme='arcane'] td {
+	border-bottom: 1px solid var(--color-border);
+}
+
+[data-theme='arcane'] tr:hover td {
+	background-color: rgb(184 134 11 / 0.1);
+}
+
+/* Workboard lanes - Panel style */
+[data-theme='arcane'] .lane {
+	background-color: var(--color-surface);
+	border: 2px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	box-shadow: var(--shadow-md);
+}
+
+[data-theme='arcane'] .lane-header {
+	font-family: var(--font-sans);
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--color-primary);
+	background-color: #252320;
+	border-bottom: 2px solid var(--color-border);
+}
+
+/* Error/overdue states - Dragon's blood */
+[data-theme='arcane'] .overdue {
+	border-color: var(--color-error);
+	background-color: rgb(139 0 0 / 0.15);
+	box-shadow: inset 0 0 8px rgb(139 0 0 / 0.3);
+}
+
+[data-theme='arcane'] .error-text {
+	color: #cd5c5c;
+	text-shadow: 0 0 4px rgb(139 0 0 / 0.5);
+}
+
+/* Success states - Emerald */
+[data-theme='arcane'] .success-text {
+	color: #50c878;
+	text-shadow: 0 0 4px rgb(46 139 87 / 0.5);
+}
+
+/* Warning states - Amber glow */
+[data-theme='arcane'] .warning-text {
+	color: var(--color-warning);
+	text-shadow: 0 0 4px rgb(218 165 32 / 0.5);
+}
+
+/* Scrollbar styling for arcane aesthetic */
+[data-theme='arcane'] ::-webkit-scrollbar {
+	width: 12px;
+	height: 12px;
+}
+
+[data-theme='arcane'] ::-webkit-scrollbar-track {
+	background-color: #1a1816;
+	border: 1px solid var(--color-border);
+}
+
+[data-theme='arcane'] ::-webkit-scrollbar-thumb {
+	background-color: var(--color-border);
+	border: 2px solid #1a1816;
+}
+
+[data-theme='arcane'] ::-webkit-scrollbar-thumb:hover {
+	background-color: var(--color-primary);
+}
+
+/* Selection styling */
+[data-theme='arcane'] ::selection {
+	background-color: var(--color-primary);
+	color: #1a1816;
+}
