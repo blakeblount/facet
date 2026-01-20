@@ -36,6 +36,51 @@ impl TicketStatus {
     pub fn is_open(&self) -> bool {
         !matches!(self, TicketStatus::Closed | TicketStatus::Archived)
     }
+
+    /// Check if a status transition is valid.
+    ///
+    /// Allowed transitions:
+    /// - Intake → InProgress, WaitingOnParts, ReadyForPickup
+    /// - InProgress → WaitingOnParts, ReadyForPickup
+    /// - WaitingOnParts → InProgress, ReadyForPickup
+    /// - ReadyForPickup → Closed
+    /// - Closed → Archived (admin only, but allowed by this check)
+    ///
+    /// Note: Closing is handled separately via the close endpoint.
+    /// This method validates transitions for the status change endpoint.
+    pub fn can_transition_to(&self, new_status: TicketStatus) -> bool {
+        match (self, new_status) {
+            // Cannot stay on the same status
+            (from, to) if *from == to => false,
+
+            // Intake can move to any active status
+            (TicketStatus::Intake, TicketStatus::InProgress)
+            | (TicketStatus::Intake, TicketStatus::WaitingOnParts)
+            | (TicketStatus::Intake, TicketStatus::ReadyForPickup) => true,
+
+            // InProgress can move to waiting or ready
+            (TicketStatus::InProgress, TicketStatus::WaitingOnParts)
+            | (TicketStatus::InProgress, TicketStatus::ReadyForPickup) => true,
+
+            // WaitingOnParts can go back to in_progress or move to ready
+            (TicketStatus::WaitingOnParts, TicketStatus::InProgress)
+            | (TicketStatus::WaitingOnParts, TicketStatus::ReadyForPickup) => true,
+
+            // ReadyForPickup can only be closed (via close endpoint, not status change)
+            // So no valid transitions from ReadyForPickup via status endpoint
+            (TicketStatus::ReadyForPickup, _) => false,
+
+            // Closed tickets can only be archived (admin operation)
+            (TicketStatus::Closed, TicketStatus::Archived) => true,
+            (TicketStatus::Closed, _) => false,
+
+            // Archived tickets cannot change status
+            (TicketStatus::Archived, _) => false,
+
+            // Catch-all: reject any other transitions
+            _ => false,
+        }
+    }
 }
 
 /// Full ticket entity with all fields.
@@ -233,5 +278,83 @@ mod tests {
         assert!(json.contains("\"in_progress\":[]"));
         assert!(json.contains("\"waiting_on_parts\":[]"));
         assert!(json.contains("\"ready_for_pickup\":[]"));
+    }
+
+    #[test]
+    fn test_status_transition_same_status() {
+        // Cannot transition to the same status
+        assert!(!TicketStatus::Intake.can_transition_to(TicketStatus::Intake));
+        assert!(!TicketStatus::InProgress.can_transition_to(TicketStatus::InProgress));
+        assert!(!TicketStatus::WaitingOnParts.can_transition_to(TicketStatus::WaitingOnParts));
+        assert!(!TicketStatus::ReadyForPickup.can_transition_to(TicketStatus::ReadyForPickup));
+        assert!(!TicketStatus::Closed.can_transition_to(TicketStatus::Closed));
+        assert!(!TicketStatus::Archived.can_transition_to(TicketStatus::Archived));
+    }
+
+    #[test]
+    fn test_status_transition_from_intake() {
+        // Intake can move to in_progress, waiting_on_parts, or ready_for_pickup
+        assert!(TicketStatus::Intake.can_transition_to(TicketStatus::InProgress));
+        assert!(TicketStatus::Intake.can_transition_to(TicketStatus::WaitingOnParts));
+        assert!(TicketStatus::Intake.can_transition_to(TicketStatus::ReadyForPickup));
+        // Cannot skip to closed/archived
+        assert!(!TicketStatus::Intake.can_transition_to(TicketStatus::Closed));
+        assert!(!TicketStatus::Intake.can_transition_to(TicketStatus::Archived));
+    }
+
+    #[test]
+    fn test_status_transition_from_in_progress() {
+        // InProgress can move to waiting_on_parts or ready_for_pickup
+        assert!(TicketStatus::InProgress.can_transition_to(TicketStatus::WaitingOnParts));
+        assert!(TicketStatus::InProgress.can_transition_to(TicketStatus::ReadyForPickup));
+        // Cannot go back to intake
+        assert!(!TicketStatus::InProgress.can_transition_to(TicketStatus::Intake));
+        // Cannot skip to closed/archived
+        assert!(!TicketStatus::InProgress.can_transition_to(TicketStatus::Closed));
+        assert!(!TicketStatus::InProgress.can_transition_to(TicketStatus::Archived));
+    }
+
+    #[test]
+    fn test_status_transition_from_waiting_on_parts() {
+        // WaitingOnParts can go back to in_progress or move to ready_for_pickup
+        assert!(TicketStatus::WaitingOnParts.can_transition_to(TicketStatus::InProgress));
+        assert!(TicketStatus::WaitingOnParts.can_transition_to(TicketStatus::ReadyForPickup));
+        // Cannot go back to intake
+        assert!(!TicketStatus::WaitingOnParts.can_transition_to(TicketStatus::Intake));
+        // Cannot skip to closed/archived
+        assert!(!TicketStatus::WaitingOnParts.can_transition_to(TicketStatus::Closed));
+        assert!(!TicketStatus::WaitingOnParts.can_transition_to(TicketStatus::Archived));
+    }
+
+    #[test]
+    fn test_status_transition_from_ready_for_pickup() {
+        // ReadyForPickup can only be closed (via close endpoint, not status change)
+        // So no valid transitions via status endpoint
+        assert!(!TicketStatus::ReadyForPickup.can_transition_to(TicketStatus::Intake));
+        assert!(!TicketStatus::ReadyForPickup.can_transition_to(TicketStatus::InProgress));
+        assert!(!TicketStatus::ReadyForPickup.can_transition_to(TicketStatus::WaitingOnParts));
+        assert!(!TicketStatus::ReadyForPickup.can_transition_to(TicketStatus::Closed));
+        assert!(!TicketStatus::ReadyForPickup.can_transition_to(TicketStatus::Archived));
+    }
+
+    #[test]
+    fn test_status_transition_from_closed() {
+        // Closed can only be archived
+        assert!(TicketStatus::Closed.can_transition_to(TicketStatus::Archived));
+        // Cannot reopen
+        assert!(!TicketStatus::Closed.can_transition_to(TicketStatus::Intake));
+        assert!(!TicketStatus::Closed.can_transition_to(TicketStatus::InProgress));
+        assert!(!TicketStatus::Closed.can_transition_to(TicketStatus::WaitingOnParts));
+        assert!(!TicketStatus::Closed.can_transition_to(TicketStatus::ReadyForPickup));
+    }
+
+    #[test]
+    fn test_status_transition_from_archived() {
+        // Archived cannot change status
+        assert!(!TicketStatus::Archived.can_transition_to(TicketStatus::Intake));
+        assert!(!TicketStatus::Archived.can_transition_to(TicketStatus::InProgress));
+        assert!(!TicketStatus::Archived.can_transition_to(TicketStatus::WaitingOnParts));
+        assert!(!TicketStatus::Archived.can_transition_to(TicketStatus::ReadyForPickup));
+        assert!(!TicketStatus::Archived.can_transition_to(TicketStatus::Closed));
     }
 }

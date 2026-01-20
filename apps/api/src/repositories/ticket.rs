@@ -85,6 +85,35 @@ impl TicketRepository {
         Ok(ticket)
     }
 
+    /// Update just the status of a ticket.
+    ///
+    /// This is a focused update for status changes, separate from general ticket updates.
+    /// Also updates the last_modified_by and updated_at fields.
+    pub async fn update_status(
+        pool: &PgPool,
+        ticket_id: Uuid,
+        new_status: TicketStatus,
+        modified_by: Uuid,
+    ) -> Result<Ticket, AppError> {
+        let ticket = sqlx::query_as::<_, Ticket>(
+            r#"
+            UPDATE tickets SET
+                status = $2,
+                last_modified_by = $3,
+                updated_at = NOW()
+            WHERE ticket_id = $1
+            RETURNING *
+            "#,
+        )
+        .bind(ticket_id)
+        .bind(new_status)
+        .bind(modified_by)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(ticket)
+    }
+
     /// Update a ticket.
     ///
     /// Only non-None fields in the input will be updated.

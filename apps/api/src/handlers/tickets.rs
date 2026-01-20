@@ -1084,6 +1084,87 @@ pub async fn get_queue(State(state): State<AppState>) -> Result<impl IntoRespons
     Ok(Json(ApiResponse::success(response)))
 }
 
+// =============================================================================
+// POST /tickets/:ticket_id/status - Change Ticket Status
+// =============================================================================
+
+/// Request body for changing ticket status.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ChangeStatusRequest {
+    /// The new status to set
+    pub status: TicketStatus,
+}
+
+/// Response for a status change.
+#[derive(Debug, Clone, Serialize)]
+pub struct ChangeStatusResponse {
+    /// The updated ticket
+    #[serde(flatten)]
+    pub ticket: Ticket,
+    /// The previous status
+    pub previous_status: TicketStatus,
+}
+
+/// POST /api/v1/tickets/:ticket_id/status - Change ticket status.
+///
+/// Validates the status transition and records it in the status history.
+/// Requires X-Employee-ID header for attribution.
+pub async fn change_status(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(ticket_id): Path<Uuid>,
+    Json(body): Json<ChangeStatusRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // 1. Extract and validate employee ID from header
+    let employee_id = extract_employee_id(&headers)?;
+
+    // Verify employee exists and is active
+    let employee = EmployeeRepository::find_active_by_id(&state.db, employee_id)
+        .await?
+        .ok_or_else(|| AppError::validation("Employee not found or inactive"))?;
+
+    // 2. Find the ticket
+    let existing_ticket = TicketRepository::find_by_id(&state.db, ticket_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Ticket not found"))?;
+
+    let previous_status = existing_ticket.status;
+
+    // 3. Validate the status transition
+    if !previous_status.can_transition_to(body.status) {
+        return Err(AppError::validation(format!(
+            "Cannot transition from {} to {}",
+            serde_json::to_string(&previous_status).unwrap_or_else(|_| "unknown".to_string()),
+            serde_json::to_string(&body.status).unwrap_or_else(|_| "unknown".to_string())
+        )));
+    }
+
+    // 4. Update the ticket status
+    let updated_ticket =
+        TicketRepository::update_status(&state.db, ticket_id, body.status, employee.employee_id)
+            .await?;
+
+    // 5. Create status history entry
+    StatusHistoryRepository::create(
+        &state.db,
+        CreateStatusHistory {
+            ticket_id,
+            from_status: Some(previous_status),
+            to_status: body.status,
+            changed_by: employee.employee_id,
+        },
+    )
+    .await?;
+
+    // 6. Return updated ticket with previous status
+    let response = ChangeStatusResponse {
+        ticket: updated_ticket,
+        previous_status,
+    };
+
+    Ok(Json(ApiResponse::success(response)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1498,5 +1579,33 @@ mod tests {
         assert!(json.contains("\"in_progress\""));
         assert!(json.contains("\"waiting_on_parts\""));
         assert!(json.contains("\"ready_for_pickup\""));
+    }
+
+    #[test]
+    fn test_change_status_request_deserialize() {
+        let json = r#"{"status": "in_progress"}"#;
+        let request: ChangeStatusRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.status, TicketStatus::InProgress);
+    }
+
+    #[test]
+    fn test_change_status_request_deserialize_waiting_on_parts() {
+        let json = r#"{"status": "waiting_on_parts"}"#;
+        let request: ChangeStatusRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.status, TicketStatus::WaitingOnParts);
+    }
+
+    #[test]
+    fn test_change_status_request_deserialize_ready_for_pickup() {
+        let json = r#"{"status": "ready_for_pickup"}"#;
+        let request: ChangeStatusRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.status, TicketStatus::ReadyForPickup);
+    }
+
+    #[test]
+    fn test_change_status_request_invalid_status() {
+        let json = r#"{"status": "invalid"}"#;
+        let result: Result<ChangeStatusRequest, _> = serde_json::from_str(json);
+        assert!(result.is_err());
     }
 }
