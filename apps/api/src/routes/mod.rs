@@ -22,6 +22,8 @@ use crate::handlers;
 
 pub use health::health_check;
 
+use crate::storage::StorageClient;
+
 /// Application state shared across all handlers.
 ///
 /// Contains the database connection pool and other shared resources.
@@ -29,12 +31,22 @@ pub use health::health_check;
 pub struct AppState {
     /// PostgreSQL connection pool
     pub db: PgPool,
+    /// S3-compatible storage client for photo uploads (optional for dev environments)
+    pub storage: Option<StorageClient>,
 }
 
 impl AppState {
     /// Create a new AppState with the given database pool.
     pub fn new(db: PgPool) -> Self {
-        Self { db }
+        Self { db, storage: None }
+    }
+
+    /// Create a new AppState with database pool and storage client.
+    pub fn with_storage(db: PgPool, storage: StorageClient) -> Self {
+        Self {
+            db,
+            storage: Some(storage),
+        }
     }
 }
 
@@ -56,7 +68,8 @@ pub fn api_router(state: AppState) -> Router {
         .route("/{ticket_id}/receipt.pdf", get(handlers::get_receipt_pdf))
         .route("/{ticket_id}/label.pdf", get(handlers::get_label_pdf))
         .route("/{ticket_id}/status", post(handlers::change_status))
-        .route("/{ticket_id}/close", post(handlers::close_ticket));
+        .route("/{ticket_id}/close", post(handlers::close_ticket))
+        .route("/{ticket_id}/photos", post(handlers::upload_photo));
 
     // Queue route
     let queue_route = Router::new().route("/", get(handlers::get_queue));

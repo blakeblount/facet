@@ -2,7 +2,7 @@
 
 use axum::{
     body::Body,
-    extract::{Path, Query, State},
+    extract::{Multipart, Path, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -14,12 +14,13 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::models::{
-    CreateCustomer, CreateFieldHistory, CreateStatusHistory, CreateTicket, Customer, QueueTicket,
-    Ticket, TicketFilters, TicketSearchParams, TicketStatus, UpdateTicket,
+    CreateCustomer, CreateFieldHistory, CreateStatusHistory, CreateTicket, CreateTicketPhoto,
+    Customer, QueueTicket, Ticket, TicketFilters, TicketPhoto as TicketPhotoModel,
+    TicketSearchParams, TicketStatus, UpdateTicket,
 };
 use crate::repositories::{
     CustomerRepository, EmployeeRepository, FieldHistoryRepository, StatusHistoryRepository,
-    TicketRepository,
+    TicketPhotoRepository, TicketRepository,
 };
 use crate::response::ApiResponse;
 use crate::routes::AppState;
@@ -1248,6 +1249,161 @@ pub async fn change_status(
     };
 
     Ok(Json(ApiResponse::success(response)))
+}
+
+// =============================================================================
+// POST /tickets/:ticket_id/photos - Upload Photo
+// =============================================================================
+
+/// Maximum number of photos allowed per ticket.
+const MAX_PHOTOS_PER_TICKET: i64 = 10;
+
+/// Maximum file size in bytes (10MB).
+const MAX_FILE_SIZE: usize = 10 * 1024 * 1024;
+
+/// Allowed content types for photo uploads.
+const ALLOWED_CONTENT_TYPES: &[&str] = &["image/jpeg", "image/png", "image/webp"];
+
+/// Response for a successfully uploaded photo.
+#[derive(Debug, Clone, Serialize)]
+pub struct UploadPhotoResponse {
+    /// The created photo record
+    #[serde(flatten)]
+    pub photo: TicketPhotoModel,
+    /// Signed URL for accessing the photo
+    pub url: String,
+}
+
+/// POST /api/v1/tickets/:ticket_id/photos - Upload a photo to a ticket.
+///
+/// Accepts multipart/form-data with a single file field named "photo".
+/// Validates file type (jpeg, png, webp) and size (max 10MB).
+/// Requires X-Employee-ID header for attribution.
+pub async fn upload_photo(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(ticket_id): Path<Uuid>,
+    mut multipart: Multipart,
+) -> Result<impl IntoResponse, AppError> {
+    // 1. Extract and validate employee ID from header
+    let employee_id = extract_employee_id(&headers)?;
+
+    // Verify employee exists and is active
+    let employee = EmployeeRepository::find_active_by_id(&state.db, employee_id)
+        .await?
+        .ok_or_else(|| AppError::validation("Employee not found or inactive"))?;
+
+    // 2. Verify ticket exists
+    let ticket = TicketRepository::find_by_id(&state.db, ticket_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Ticket not found"))?;
+
+    // 3. Check photo limit
+    let current_count = TicketPhotoRepository::count_by_ticket_id(&state.db, ticket_id).await?;
+    if current_count >= MAX_PHOTOS_PER_TICKET {
+        return Err(AppError::photo_limit(format!(
+            "Maximum {} photos per ticket reached",
+            MAX_PHOTOS_PER_TICKET
+        )));
+    }
+
+    // 4. Get the storage client (required for upload)
+    let storage = state
+        .storage
+        .as_ref()
+        .ok_or_else(|| AppError::server_error("Storage not configured"))?;
+
+    // 5. Extract file from multipart form
+    let mut file_data: Option<(String, Vec<u8>)> = None;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::validation(format!("Failed to read multipart field: {}", e)))?
+    {
+        let name = field.name().unwrap_or("").to_string();
+
+        if name == "photo" {
+            // Get content type from field
+            let content_type = field
+                .content_type()
+                .map(|ct| ct.to_string())
+                .unwrap_or_else(|| "application/octet-stream".to_string());
+
+            // Validate content type
+            if !ALLOWED_CONTENT_TYPES.contains(&content_type.as_str()) {
+                return Err(AppError::validation(format!(
+                    "Invalid file type '{}'. Allowed types: jpeg, png, webp",
+                    content_type
+                )));
+            }
+
+            // Read file data
+            let data = field
+                .bytes()
+                .await
+                .map_err(|e| AppError::validation(format!("Failed to read file data: {}", e)))?;
+
+            // Validate file size
+            if data.len() > MAX_FILE_SIZE {
+                return Err(AppError::validation(format!(
+                    "File too large. Maximum size is {}MB",
+                    MAX_FILE_SIZE / (1024 * 1024)
+                )));
+            }
+
+            if data.is_empty() {
+                return Err(AppError::validation("Empty file provided"));
+            }
+
+            file_data = Some((content_type, data.to_vec()));
+            break;
+        }
+    }
+
+    let (content_type, data) =
+        file_data.ok_or_else(|| AppError::validation("No 'photo' field in request"))?;
+
+    // 6. Generate unique storage key
+    let photo_id = Uuid::new_v4();
+    let extension = match content_type.as_str() {
+        "image/jpeg" => "jpg",
+        "image/png" => "png",
+        "image/webp" => "webp",
+        _ => "bin",
+    };
+    let storage_key = format!("tickets/{}/{}.{}", ticket.ticket_id, photo_id, extension);
+
+    // 7. Upload to S3
+    let file_size = data.len() as i32;
+    storage
+        .upload(&storage_key, data, &content_type)
+        .await
+        .map_err(|e| AppError::server_error(format!("Failed to upload photo: {}", e)))?;
+
+    // 8. Create database record
+    let photo = TicketPhotoRepository::create(
+        &state.db,
+        CreateTicketPhoto {
+            ticket_id,
+            storage_key: storage_key.clone(),
+            content_type,
+            size_bytes: file_size,
+            uploaded_by: employee.employee_id,
+        },
+    )
+    .await?;
+
+    // 9. Generate signed URL for accessing the photo
+    let url = storage
+        .get_signed_url(&storage_key, None)
+        .await
+        .map_err(|e| AppError::server_error(format!("Failed to generate signed URL: {}", e)))?;
+
+    // 10. Return response
+    let response = UploadPhotoResponse { photo, url };
+
+    Ok((StatusCode::CREATED, Json(ApiResponse::success(response))))
 }
 
 #[cfg(test)]
