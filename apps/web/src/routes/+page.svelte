@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { SvelteMap } from 'svelte/reactivity';
 	import type { PageData } from './$types';
-	import { resolve } from '$app/paths';
 	import { invalidateAll } from '$app/navigation';
 	import Button from '$lib/components/Button.svelte';
 	import StatusLane from '$lib/components/StatusLane.svelte';
 	import TicketCard from '$lib/components/TicketCard.svelte';
 	import EmployeeIdModal from '$lib/components/EmployeeIdModal.svelte';
 	import IntakeFormModal from '$lib/components/IntakeFormModal.svelte';
+	import TicketDetailModal from '$lib/components/TicketDetailModal.svelte';
 	import {
 		changeTicketStatus,
 		setCurrentEmployee,
@@ -24,6 +24,10 @@
 
 	// Modal state for intake form
 	let showIntakeModal = $state(false);
+
+	// Modal state for ticket detail view
+	let showTicketDetailModal = $state(false);
+	let selectedTicketId = $state<string | null>(null);
 
 	// Modal state for PIN verification before status change
 	let showPinModal = $state(false);
@@ -183,8 +187,19 @@
 		pendingStatusChange = null;
 	}
 
-	function navigateToTicket(ticketId: string) {
-		window.location.href = resolve('/tickets/[id]', { id: ticketId });
+	function openTicketModal(ticketId: string) {
+		selectedTicketId = ticketId;
+		showTicketDetailModal = true;
+	}
+
+	function closeTicketModal() {
+		showTicketDetailModal = false;
+		selectedTicketId = null;
+	}
+
+	async function handleTicketClosed() {
+		// Refresh the workboard to reflect the closed ticket
+		await invalidateAll();
 	}
 
 	// Helper to determine if lane is a valid drop target
@@ -235,7 +250,7 @@
 						isDragging={draggingTicketId === ticket.ticket_id}
 						ondragstart={handleDragStart}
 						ondragend={handleDragEnd}
-						onclick={() => navigateToTicket(ticket.ticket_id)}
+						onclick={() => openTicketModal(ticket.ticket_id)}
 					/>
 				{:else}
 					<p class="lane-empty-message">No tickets</p>
@@ -258,7 +273,7 @@
 						isDragging={draggingTicketId === ticket.ticket_id}
 						ondragstart={handleDragStart}
 						ondragend={handleDragEnd}
-						onclick={() => navigateToTicket(ticket.ticket_id)}
+						onclick={() => openTicketModal(ticket.ticket_id)}
 					/>
 				{:else}
 					<p class="lane-empty-message">No tickets</p>
@@ -281,7 +296,7 @@
 						isDragging={draggingTicketId === ticket.ticket_id}
 						ondragstart={handleDragStart}
 						ondragend={handleDragEnd}
-						onclick={() => navigateToTicket(ticket.ticket_id)}
+						onclick={() => openTicketModal(ticket.ticket_id)}
 					/>
 				{:else}
 					<p class="lane-empty-message">No tickets</p>
@@ -304,7 +319,7 @@
 						isDragging={draggingTicketId === ticket.ticket_id}
 						ondragstart={handleDragStart}
 						ondragend={handleDragEnd}
-						onclick={() => navigateToTicket(ticket.ticket_id)}
+						onclick={() => openTicketModal(ticket.ticket_id)}
 					/>
 				{:else}
 					<p class="lane-empty-message">No tickets</p>
@@ -329,6 +344,14 @@
 	open={showIntakeModal}
 	onClose={handleIntakeClose}
 	onSuccess={handleIntakeSuccess}
+/>
+
+<!-- Ticket Detail Modal for viewing ticket details -->
+<TicketDetailModal
+	ticketId={selectedTicketId}
+	open={showTicketDetailModal}
+	onClose={closeTicketModal}
+	onTicketClosed={handleTicketClosed}
 />
 
 <style>
