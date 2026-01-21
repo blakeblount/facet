@@ -3,7 +3,8 @@
 use crate::auth::{hash_pin, verify_pin};
 use crate::error::AppError;
 use crate::models::store_settings::{
-    StoreSettings, StoreSettingsPublic, TicketNumberResult, UpdateStoreSettings,
+    StoreSettings, StoreSettingsMinimalPublic, StoreSettingsPublic, TicketNumberResult,
+    UpdateStoreSettings,
 };
 use sqlx::PgPool;
 
@@ -28,9 +29,19 @@ impl StoreSettingsRepository {
     }
 
     /// Get the public store settings (without admin PIN hash).
+    /// For authenticated admin responses.
     pub async fn get_settings_public(pool: &PgPool) -> Result<StoreSettingsPublic, AppError> {
         let settings = Self::get_settings(pool).await?;
         Ok(StoreSettingsPublic::from(settings))
+    }
+
+    /// Get minimal public store settings for unauthenticated access.
+    /// Excludes security-sensitive fields like setup_complete and next_ticket_number.
+    pub async fn get_settings_minimal_public(
+        pool: &PgPool,
+    ) -> Result<StoreSettingsMinimalPublic, AppError> {
+        let settings = Self::get_settings(pool).await?;
+        Ok(StoreSettingsMinimalPublic::from(settings))
     }
 
     /// Update store settings.

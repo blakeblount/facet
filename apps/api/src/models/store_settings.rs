@@ -28,7 +28,8 @@ pub struct StoreSettings {
     pub updated_at: DateTime<Utc>,
 }
 
-/// Public view of store settings (without admin PIN hash).
+/// Full public view of store settings (without admin PIN hash).
+/// Used for authenticated admin responses.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoreSettingsPublic {
     pub setting_id: Uuid,
@@ -42,6 +43,24 @@ pub struct StoreSettingsPublic {
     pub setup_complete: bool,
     /// Whether initial setup is still required (setup incomplete and deadline not passed).
     pub setup_required: bool,
+    pub min_pin_length: i32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Minimal public view of store settings for unauthenticated access.
+/// Excludes security-sensitive fields:
+/// - `setup_complete` / `setup_required` - could indicate target for attack
+/// - `next_ticket_number` - prevents ticket enumeration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoreSettingsMinimalPublic {
+    pub setting_id: Uuid,
+    pub store_name: String,
+    pub store_phone: Option<String>,
+    pub store_address: Option<String>,
+    pub ticket_prefix: String,
+    pub currency: String,
+    pub max_photos_per_ticket: i32,
     pub min_pin_length: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -62,6 +81,23 @@ impl From<StoreSettings> for StoreSettingsPublic {
             max_photos_per_ticket: settings.max_photos_per_ticket,
             setup_complete: settings.setup_complete,
             setup_required,
+            min_pin_length: settings.min_pin_length,
+            created_at: settings.created_at,
+            updated_at: settings.updated_at,
+        }
+    }
+}
+
+impl From<StoreSettings> for StoreSettingsMinimalPublic {
+    fn from(settings: StoreSettings) -> Self {
+        Self {
+            setting_id: settings.setting_id,
+            store_name: settings.store_name,
+            store_phone: settings.store_phone,
+            store_address: settings.store_address,
+            ticket_prefix: settings.ticket_prefix,
+            currency: settings.currency,
+            max_photos_per_ticket: settings.max_photos_per_ticket,
             min_pin_length: settings.min_pin_length,
             created_at: settings.created_at,
             updated_at: settings.updated_at,

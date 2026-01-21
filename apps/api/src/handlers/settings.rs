@@ -4,7 +4,7 @@ use axum::{extract::State, http::HeaderMap, response::IntoResponse, Json};
 
 use crate::error::AppError;
 use crate::handlers::verify_admin_auth;
-use crate::models::store_settings::{StoreSettingsPublic, UpdateStoreSettings};
+use crate::models::store_settings::{StoreSettingsMinimalPublic, UpdateStoreSettings};
 use crate::repositories::StoreSettingsRepository;
 use crate::response::ApiResponse;
 use crate::routes::AppState;
@@ -19,11 +19,15 @@ use crate::validation::{
 
 /// GET /api/v1/settings - Get store settings (public read).
 ///
-/// Returns the store settings without the admin PIN hash.
-/// This endpoint is public and does not require authentication.
+/// Returns minimal store settings without security-sensitive fields.
+/// This endpoint is intentionally public for PWA initial load and branding.
+///
+/// Excluded for security:
+/// - `setup_complete` / `setup_required` - could indicate target for attack
+/// - `next_ticket_number` - prevents ticket enumeration
 pub async fn get_settings(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
-    let settings: StoreSettingsPublic =
-        StoreSettingsRepository::get_settings_public(&state.db).await?;
+    let settings: StoreSettingsMinimalPublic =
+        StoreSettingsRepository::get_settings_minimal_public(&state.db).await?;
 
     Ok(Json(ApiResponse::success(settings)))
 }

@@ -493,7 +493,8 @@ export interface UpdateStorageLocationRequest {
 // =============================================================================
 
 /**
- * Store settings entity (public view without admin PIN hash).
+ * Minimal store settings returned from GET /api/v1/settings (public endpoint).
+ * Excludes security-sensitive fields for unauthenticated access.
  */
 export interface StoreSettings {
 	setting_id: string;
@@ -501,10 +502,9 @@ export interface StoreSettings {
 	store_phone: string | null;
 	store_address: string | null;
 	ticket_prefix: string;
-	next_ticket_number: number;
 	currency: string;
 	max_photos_per_ticket: number;
-	setup_complete: boolean;
+	min_pin_length: number;
 	created_at: string;
 	updated_at: string;
 }
