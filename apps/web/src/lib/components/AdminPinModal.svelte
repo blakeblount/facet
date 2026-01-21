@@ -55,7 +55,13 @@
 	}
 </script>
 
-<Modal {open} title="Admin Authentication" onClose={handleClose} closeOnBackdrop={!adminAuthStore.isVerifying} closeOnEsc={!adminAuthStore.isVerifying}>
+<Modal
+	{open}
+	title="Admin Authentication"
+	onClose={handleClose}
+	closeOnBackdrop={!adminAuthStore.isVerifying}
+	closeOnEsc={!adminAuthStore.isVerifying}
+>
 	<form
 		bind:this={formEl}
 		class="admin-pin-form"
@@ -81,8 +87,15 @@
 		</div>
 
 		<div class="form-actions">
-			<Button variant="secondary" onclick={handleClose} disabled={adminAuthStore.isVerifying}>Cancel</Button>
-			<Button variant="primary" type="submit" loading={adminAuthStore.isVerifying} disabled={adminAuthStore.isVerifying || !pin.trim()}>
+			<Button variant="secondary" onclick={handleClose} disabled={adminAuthStore.isVerifying}
+				>Cancel</Button
+			>
+			<Button
+				variant="primary"
+				type="submit"
+				loading={adminAuthStore.isVerifying}
+				disabled={adminAuthStore.isVerifying || !pin.trim()}
+			>
 				Unlock
 			</Button>
 		</div>

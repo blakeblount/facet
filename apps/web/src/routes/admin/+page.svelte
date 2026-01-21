@@ -2,7 +2,13 @@
 	import { onMount } from 'svelte';
 	import type { PageData } from './$types';
 	import type { EmployeeSummary } from '$lib/types/api';
-	import { themeStore, THEMES, THEME_NAMES, THEME_DESCRIPTIONS, type Theme } from '$lib/stores/theme.svelte';
+	import {
+		themeStore,
+		THEMES,
+		THEME_NAMES,
+		THEME_DESCRIPTIONS,
+		type Theme
+	} from '$lib/stores/theme.svelte';
 	import { adminAuthStore } from '$lib/stores/adminAuth.svelte';
 	import { listEmployees, ApiClientError } from '$lib/services/api';
 	import AdminPinModal from '$lib/components/AdminPinModal.svelte';
@@ -83,11 +89,7 @@
 	}
 </script>
 
-<AdminPinModal
-	open={showAuthModal}
-	onClose={handleAuthClose}
-	onSuccess={handleAuthSuccess}
-/>
+<AdminPinModal open={showAuthModal} onClose={handleAuthClose} onSuccess={handleAuthSuccess} />
 
 <div class="admin-page">
 	<div class="admin-header">
@@ -179,7 +181,7 @@
 					{#if !adminAuthStore.isAuthenticated}
 						<div class="auth-prompt">
 							<p class="placeholder-text">Enter admin PIN to view and manage employees.</p>
-							<button class="unlock-button" onclick={() => showAuthModal = true}>
+							<button class="unlock-button" onclick={() => (showAuthModal = true)}>
 								<svg
 									xmlns="http://www.w3.org/2000/svg"
 									width="16"
@@ -280,7 +282,8 @@
 		font-size: 0.875rem;
 		font-weight: 500;
 		cursor: pointer;
-		transition: background-color var(--transition-fast, 150ms ease),
+		transition:
+			background-color var(--transition-fast, 150ms ease),
 			border-color var(--transition-fast, 150ms ease),
 			color var(--transition-fast, 150ms ease);
 	}
@@ -498,7 +501,8 @@
 		border-radius: var(--radius-md);
 		cursor: pointer;
 		text-align: left;
-		transition: border-color var(--transition-fast, 150ms ease),
+		transition:
+			border-color var(--transition-fast, 150ms ease),
 			background-color var(--transition-fast, 150ms ease);
 	}
 

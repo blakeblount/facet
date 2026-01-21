@@ -23,6 +23,22 @@ export default defineConfig({
 				globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
 				runtimeCaching: [
 					{
+						// SvelteKit data endpoints - always fetch fresh for real-time updates
+						urlPattern: /\/__data\.json/,
+						handler: 'NetworkFirst',
+						options: {
+							cacheName: 'sveltekit-data',
+							networkTimeoutSeconds: 5,
+							expiration: {
+								maxEntries: 50,
+								maxAgeSeconds: 60 // 1 minute - short cache for fallback only
+							},
+							cacheableResponse: {
+								statuses: [0, 200]
+							}
+						}
+					},
+					{
 						urlPattern: /^https:\/\/.*\.(?:png|jpg|jpeg|svg|gif|webp)$/,
 						handler: 'CacheFirst',
 						options: {

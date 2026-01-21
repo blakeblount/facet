@@ -92,7 +92,8 @@
 		showIntakeModal = false;
 	}
 
-	async function handleIntakeSuccess(ticketId: string, friendlyCode: string) {
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars -- Params required by callback signature
+	async function handleIntakeSuccess(_ticketId: string, _friendlyCode: string) {
 		showIntakeModal = false;
 		// Refresh the workboard to show the new ticket
 		await invalidateAll();

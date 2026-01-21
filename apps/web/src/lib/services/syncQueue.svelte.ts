@@ -298,6 +298,7 @@ async function syncTicket(ticket: QueuedTicket): Promise<SyncResult> {
 export async function syncAllPending(
 	onProgress?: SyncProgressCallback
 ): Promise<Map<string, SyncResult>> {
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- Not reactive state, just a return value
 	const results = new Map<string, SyncResult>();
 	const pending = await getPendingTickets();
 
