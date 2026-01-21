@@ -885,14 +885,17 @@
 	bind:this={lightboxDialogEl}
 	class="lightbox-dialog"
 	aria-label="Photo viewer"
-	onclick={(e) => {
-		// Close on backdrop click (clicking the dialog element itself, not content)
-		if (e.target === lightboxDialogEl) closeLightbox();
-	}}
 	onkeydown={handleLightboxKeydown}
 >
 	{#if lightboxPhoto}
-		<div class="lightbox-inner">
+		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+		<div
+			class="lightbox-inner"
+			onclick={(e) => {
+				// Close on backdrop click (clicking the inner backdrop, not content)
+				if (e.target === e.currentTarget) closeLightbox();
+			}}
+		>
 			<button
 				type="button"
 				class="lightbox-close"
@@ -1525,28 +1528,33 @@
 
 	/* Lightbox (native dialog for top-layer rendering) */
 	.lightbox-dialog {
+		/* Override browser's default dialog centering/sizing */
 		position: fixed;
 		inset: 0;
 		width: 100vw;
 		height: 100vh;
 		max-width: 100vw;
 		max-height: 100vh;
+		margin: 0;
 		padding: 0;
 		border: none;
-		background: transparent;
+		/* Use fully opaque background on dialog itself to ensure it covers
+		   other dialogs in the top layer (::backdrop renders between dialogs) */
+		background: rgb(0, 0, 0);
 	}
 
 	.lightbox-dialog::backdrop {
-		background-color: rgba(0, 0, 0, 0.9);
+		/* Keep backdrop for accessibility, but make it transparent
+		   since the dialog itself provides the dark overlay */
+		background-color: transparent;
 	}
 
 	.lightbox-inner {
-		position: relative;
+		position: absolute;
+		inset: 0;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 100%;
-		height: 100%;
 		padding: var(--space-xl, 2rem);
 	}
 
