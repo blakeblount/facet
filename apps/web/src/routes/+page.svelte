@@ -10,26 +10,19 @@
 	import {
 		changeTicketStatus,
 		setCurrentEmployee,
-		hasEmployeeSession,
 		getQueue,
 		type TicketStatus,
 		type QueueTicket
 	} from '$lib/services/api';
 	import type { VerifyPinResponse, EmployeeInfo, GetQueueResponse } from '$lib/types/api';
 
-	// Queue data state - fetched client-side after authentication
+	// Queue data state - fetched client-side
 	let queueData = $state<GetQueueResponse | null>(null);
 	let queueError = $state<string | null>(null);
 	let queueLoading = $state(false);
 
-	// Fetch queue data from API (requires employee session)
+	// Fetch queue data from API (public - no auth required for viewing)
 	async function fetchQueue() {
-		if (!hasEmployeeSession()) {
-			// Not authenticated - show empty state
-			queueData = null;
-			return;
-		}
-
 		queueLoading = true;
 		queueError = null;
 
@@ -267,11 +260,6 @@
 			<p>Failed to load queue: {queueError}</p>
 			<button onclick={() => fetchQueue()}>Retry</button>
 		</div>
-	{:else if !hasEmployeeSession()}
-		<div class="auth-required-message">
-			<p>Please log in to view the workboard.</p>
-			<p class="auth-hint">Click "New Ticket" to authenticate with your employee PIN.</p>
-		</div>
 	{:else if lanes}
 		{#if statusUpdateError}
 			<div class="error-message error-toast">
@@ -473,24 +461,6 @@
 		padding: var(--space-xl);
 		text-align: center;
 		color: var(--color-text-muted);
-	}
-
-	.auth-required-message {
-		padding: var(--space-xl);
-		text-align: center;
-		color: var(--color-text-muted);
-		background-color: var(--color-surface-secondary);
-		border-radius: var(--radius-md);
-		margin: var(--space-lg) auto;
-		max-width: 400px;
-	}
-
-	.auth-required-message p {
-		margin-bottom: var(--space-sm);
-	}
-
-	.auth-hint {
-		font-size: 0.875rem;
 	}
 
 	.lanes-container {
