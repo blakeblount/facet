@@ -171,14 +171,15 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		min-width: 1.5rem;
-		height: 1.5rem;
-		padding: 0 var(--space-xs, 0.25rem);
-		font-size: 0.75rem;
-		font-weight: 600;
+		min-width: 1.75rem;
+		height: 1.75rem;
+		padding: 0 var(--space-sm, 0.5rem);
+		font-size: 0.875rem;
+		font-weight: 700;
 		color: white;
 		background-color: var(--color-text-muted, #6b6b6b);
 		border-radius: var(--radius-md, 0.375rem);
+		text-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
 	}
 
 	/* Status-specific count colors */
