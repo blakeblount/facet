@@ -115,16 +115,16 @@ npm run dev
 
 5. Open:
 - Web: http://localhost:5173
-- API: http://localhost:8080 (or configured port)
+- API: http://localhost:3001 (or configured port)
 
 ---
 
 ## Environment Variables
 ### API (`apps/api/.env`)
 Required:
-- `DATABASE_URL=postgres://facet:facet@localhost:5432/facet`
+- `DATABASE_URL=postgres://facet:facet_dev_password@localhost:5432/facet_dev`
 - `APP_ENV=development`
-- `API_PORT=8080`
+- `PORT=3001`
 
 Photos / object storage:
 - `S3_ENDPOINT=https://nyc3.digitaloceanspaces.com` (example)
