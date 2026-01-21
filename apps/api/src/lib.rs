@@ -4,6 +4,7 @@
 
 pub mod auth;
 pub mod config;
+pub mod cors;
 pub mod db;
 pub mod error;
 pub mod handlers;
@@ -17,6 +18,7 @@ pub mod storage;
 pub mod utils;
 
 pub use config::Config;
+pub use cors::build_cors_layer;
 pub use db::{create_pool, test_connection, DbConfig};
 pub use error::{codes as error_codes, AppError};
 pub use models::{CreateTicket, Ticket, TicketFilters, TicketStatus, TicketSummary, UpdateTicket};

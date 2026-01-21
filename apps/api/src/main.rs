@@ -1,8 +1,6 @@
-use api::{api_router, create_pool, test_connection, AppState, Config, DbConfig};
+use api::{api_router, build_cors_layer, create_pool, test_connection, AppState, Config, DbConfig};
 use std::net::SocketAddr;
-use std::time::Duration;
 use tokio::signal;
-use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -63,23 +61,6 @@ async fn main() {
     .expect("Server error");
 
     tracing::info!("Server shutdown complete");
-}
-
-/// Build CORS layer based on configuration.
-fn build_cors_layer(config: &Config) -> CorsLayer {
-    let cors = CorsLayer::new()
-        .allow_methods(Any)
-        .allow_headers(Any)
-        .max_age(Duration::from_secs(3600));
-
-    // If origins is "*", allow any origin; otherwise, parse specific origins
-    if config.cors_origins.len() == 1 && config.cors_origins[0] == "*" {
-        cors.allow_origin(Any)
-    } else {
-        // For specific origins, we still use Any for simplicity in MVP
-        // A more robust implementation would parse and validate each origin
-        cors.allow_origin(Any)
-    }
 }
 
 /// Wait for shutdown signal (Ctrl+C or SIGTERM).
