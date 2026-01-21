@@ -195,10 +195,15 @@
 
 <div class="workboard">
 	<div class="workboard-header">
-		<h1 class="page-title">Workboard</h1>
-		<p class="page-subtitle">
-			Manage repair tickets across status lanes. Rush tickets appear first in each lane.
-		</p>
+		<div class="workboard-header-content">
+			<div class="workboard-header-text">
+				<h1 class="page-title">Workboard</h1>
+				<p class="page-subtitle">
+					Manage repair tickets across status lanes. Rush tickets appear first in each lane.
+				</p>
+			</div>
+			<Button variant="primary" onclick={handleNewTicket}>+ New Ticket</Button>
+		</div>
 	</div>
 
 	{#if data.error}
@@ -214,35 +219,28 @@
 		{/if}
 
 		<div class="lanes-container">
-			<!-- Intake Lane with + New button -->
-			<div class="lane-wrapper">
-				<StatusLane
-					status="intake"
-					count={lanes.intake.count}
-					isDropTarget={isValidDropTarget('intake')}
-					isDragOver={dragOverLane === 'intake'}
-					ondragenter={() => handleDragEnter('intake')}
-					ondragleave={() => handleDragLeave('intake')}
-					ondrop={(ticketId) => handleDrop(ticketId, 'intake')}
-				>
-					<div class="lane-header-action">
-						<Button variant="secondary" size="sm" onclick={handleNewTicket} class="new-ticket-btn">
-							+ New
-						</Button>
-					</div>
-					{#each lanes.intake.tickets as ticket (ticket.ticket_id)}
-						<TicketCard
-							{ticket}
-							isDragging={draggingTicketId === ticket.ticket_id}
-							ondragstart={handleDragStart}
-							ondragend={handleDragEnd}
-							onclick={() => navigateToTicket(ticket.ticket_id)}
-						/>
-					{:else}
-						<p class="lane-empty-message">No tickets</p>
-					{/each}
-				</StatusLane>
-			</div>
+			<!-- Intake Lane -->
+			<StatusLane
+				status="intake"
+				count={lanes.intake.count}
+				isDropTarget={isValidDropTarget('intake')}
+				isDragOver={dragOverLane === 'intake'}
+				ondragenter={() => handleDragEnter('intake')}
+				ondragleave={() => handleDragLeave('intake')}
+				ondrop={(ticketId) => handleDrop(ticketId, 'intake')}
+			>
+				{#each lanes.intake.tickets as ticket (ticket.ticket_id)}
+					<TicketCard
+						{ticket}
+						isDragging={draggingTicketId === ticket.ticket_id}
+						ondragstart={handleDragStart}
+						ondragend={handleDragEnd}
+						onclick={() => navigateToTicket(ticket.ticket_id)}
+					/>
+				{:else}
+					<p class="lane-empty-message">No tickets</p>
+				{/each}
+			</StatusLane>
 
 			<!-- In Progress Lane -->
 			<StatusLane
@@ -345,6 +343,17 @@
 		flex-shrink: 0;
 	}
 
+	.workboard-header-content {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: var(--space-lg);
+	}
+
+	.workboard-header-text {
+		flex: 1;
+	}
+
 	.page-title {
 		font-size: 1.75rem;
 		margin-bottom: var(--space-xs);
@@ -414,32 +423,11 @@
 		border-radius: 4px;
 	}
 
-	.lane-wrapper {
-		display: contents;
-	}
-
-	.lane-header-action {
-		display: flex;
-		justify-content: flex-end;
-		padding-bottom: var(--space-sm);
-	}
-
 	.lane-empty-message {
 		padding: var(--space-md);
 		text-align: center;
 		color: var(--color-text-muted);
 		font-size: 0.875rem;
 		font-style: italic;
-	}
-
-	/* Override new ticket button styling to stand out */
-	.lane-header-action :global(.new-ticket-btn) {
-		background-color: var(--color-primary);
-		color: white;
-		border-color: var(--color-primary);
-	}
-
-	.lane-header-action :global(.new-ticket-btn:hover) {
-		background-color: var(--color-primary-dark, #1e3a8a);
 	}
 </style>
