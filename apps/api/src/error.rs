@@ -236,8 +236,35 @@ impl IntoResponse for AppError {
 impl From<sqlx::Error> for AppError {
     fn from(err: sqlx::Error) -> Self {
         tracing::error!("Database error: {:?}", err);
-        match err {
+        match &err {
             sqlx::Error::RowNotFound => AppError::not_found("Resource not found"),
+            sqlx::Error::Database(db_err) => {
+                // PostgreSQL foreign key violation code: 23503
+                if db_err.code() == Some(std::borrow::Cow::Borrowed("23503")) {
+                    // Parse constraint name to provide a clear error message
+                    if let Some(constraint) = db_err.constraint() {
+                        return match constraint {
+                            "tickets_storage_location_id_fkey" => {
+                                AppError::not_found("Storage location not found")
+                            }
+                            "tickets_customer_id_fkey" => AppError::not_found("Customer not found"),
+                            "tickets_taken_in_by_fkey"
+                            | "tickets_worked_by_fkey"
+                            | "tickets_closed_by_fkey"
+                            | "tickets_last_modified_by_fkey" => {
+                                AppError::not_found("Employee not found")
+                            }
+                            _ => AppError::validation("Referenced entity not found"),
+                        };
+                    }
+                    return AppError::validation("Referenced entity not found");
+                }
+                // PostgreSQL unique violation code: 23505
+                if db_err.code() == Some(std::borrow::Cow::Borrowed("23505")) {
+                    return AppError::conflict("A resource with that identifier already exists");
+                }
+                AppError::server_error("Database error")
+            }
             _ => AppError::server_error("Database error"),
         }
     }

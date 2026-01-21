@@ -6,9 +6,12 @@
 //! - Phone number format validation
 //! - Email format validation
 //! - Log-safe sanitization
+//! - Reference validation for foreign key relationships
 
 pub mod constraints;
+pub mod references;
 pub mod sanitize;
 
 pub use constraints::*;
+pub use references::*;
 pub use sanitize::*;

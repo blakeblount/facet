@@ -47,6 +47,20 @@ impl CustomerRepository {
         Ok(customer)
     }
 
+    /// Check if a customer exists.
+    ///
+    /// Returns true if the customer exists.
+    pub async fn exists(pool: &PgPool, customer_id: Uuid) -> Result<bool, AppError> {
+        let result = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM customers WHERE customer_id = $1)",
+        )
+        .bind(customer_id)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(result)
+    }
+
     /// Search customers by name, phone, or email.
     ///
     /// Uses case-insensitive partial matching (ILIKE) across all searchable fields.

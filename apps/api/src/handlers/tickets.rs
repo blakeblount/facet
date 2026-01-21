@@ -29,8 +29,9 @@ use crate::routes::AppState;
 use crate::services::pdf::{generate_label_pdf, generate_receipt_pdf, LabelData, ReceiptData};
 use crate::utils::file_validation::validate_image_content_type;
 use crate::validation::{
-    validate_email, validate_optional, validate_phone, validate_required, MAX_DESCRIPTION_LENGTH,
-    MAX_EMAIL_LENGTH, MAX_ITEM_TYPE_LENGTH, MAX_NAME_LENGTH, MAX_NOTE_LENGTH, MAX_PHONE_LENGTH,
+    validate_email, validate_employee, validate_optional, validate_phone, validate_required,
+    validate_storage_location, MAX_DESCRIPTION_LENGTH, MAX_EMAIL_LENGTH, MAX_ITEM_TYPE_LENGTH,
+    MAX_NAME_LENGTH, MAX_NOTE_LENGTH, MAX_PHONE_LENGTH,
 };
 
 /// Query parameters for listing tickets.
@@ -723,7 +724,10 @@ pub async fn create_ticket(
         }
     };
 
-    // 4. Create the ticket
+    // 4. Validate storage location exists and is active
+    validate_storage_location(&state.db, body.storage_location_id).await?;
+
+    // 5. Create the ticket
     let create_ticket = CreateTicket {
         customer_id,
         item_type,
@@ -739,7 +743,7 @@ pub async fn create_ticket(
 
     let ticket = TicketRepository::create(&state.db, create_ticket).await?;
 
-    // 5. Create initial status history entry (null -> intake)
+    // 6. Create initial status history entry (null -> intake)
     StatusHistoryRepository::create(
         &state.db,
         CreateStatusHistory {
@@ -751,7 +755,7 @@ pub async fn create_ticket(
     )
     .await?;
 
-    // 6. Build response with print URLs
+    // 7. Build response with print URLs
     let response = CreateTicketResponse {
         receipt_url: format!("/api/v1/tickets/{}/receipt.pdf", ticket.ticket_id),
         label_url: format!("/api/v1/tickets/{}/label.pdf", ticket.ticket_id),
@@ -1108,7 +1112,18 @@ pub async fn update_ticket(
         body.worked_by_employee_id
     );
 
-    // 7. Build update struct with validated values
+    // 7. Validate referenced entities if they are being changed
+    // Validate storage_location_id if provided
+    if let Some(location_id) = body.storage_location_id {
+        validate_storage_location(&state.db, location_id).await?;
+    }
+
+    // Validate worked_by_employee_id if provided and not None
+    if let Some(Some(employee_id)) = body.worked_by_employee_id {
+        validate_employee(&state.db, employee_id).await?;
+    }
+
+    // 8. Build update struct with validated values
     // For item_type: flatten Option<Option<String>> to Option<String>
     // - None (request didn't include field) -> None (don't change)
     // - Some(None) (request included empty/whitespace) -> None (but don't change in this case either)
@@ -1129,13 +1144,13 @@ pub async fn update_ticket(
         last_modified_by: Some(employee.employee_id),
     };
 
-    // 7. Update the ticket
+    // 9. Update the ticket
     let updated_ticket = TicketRepository::update(&state.db, ticket_id, update).await?;
 
-    // 8. Record field changes in history
+    // 10. Record field changes in history
     FieldHistoryRepository::create_batch(&state.db, field_changes).await?;
 
-    // 9. Return updated ticket
+    // 11. Return updated ticket
     Ok(Json(ApiResponse::success(updated_ticket)))
 }
 

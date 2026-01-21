@@ -72,6 +72,20 @@ impl EmployeeRepository {
         Ok(employee)
     }
 
+    /// Check if an active employee exists.
+    ///
+    /// Returns true if the employee exists and is active.
+    pub async fn exists_active(pool: &PgPool, employee_id: Uuid) -> Result<bool, AppError> {
+        let result = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM employees WHERE employee_id = $1 AND is_active = TRUE)",
+        )
+        .bind(employee_id)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(result)
+    }
+
     /// Find an active employee by PIN for verification.
     ///
     /// Returns all active employees - the caller must verify the PIN

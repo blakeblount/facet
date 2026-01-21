@@ -84,6 +84,20 @@ impl StorageLocationRepository {
         Ok(location)
     }
 
+    /// Check if an active storage location exists.
+    ///
+    /// Returns true if the location exists and is active.
+    pub async fn exists_active(pool: &PgPool, location_id: Uuid) -> Result<bool, AppError> {
+        let result = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM storage_locations WHERE location_id = $1 AND is_active = TRUE)",
+        )
+        .bind(location_id)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(result)
+    }
+
     /// List storage locations with optional filtering.
     ///
     /// If include_inactive is false (default), only active locations are returned.
