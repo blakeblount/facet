@@ -65,6 +65,7 @@
 	let isUploading: boolean = $state(false);
 	let uploadProgress: number = $state(0);
 	let uploadError: string | null = $state(null);
+	let showUploadEmployeeModal: boolean = $state(false);
 
 	// Rush toggle state
 	let isTogglingRush: boolean = $state(false);
@@ -217,14 +218,22 @@
 		showUploadModal = false;
 	}
 
-	async function handleUploadPhotos() {
+	function handleUploadClick() {
 		if (!ticket || uploadFiles.length === 0 || isUploading) return;
+		uploadError = null;
+		showUploadEmployeeModal = true;
+	}
+
+	async function handleUploadEmployeeSuccess(employee: VerifyPinResponse) {
+		if (!ticket || uploadFiles.length === 0) return;
+		showUploadEmployeeModal = false;
 
 		isUploading = true;
 		uploadError = null;
 		uploadProgress = 0;
 
 		try {
+			setCurrentEmployee(employee.employee_id);
 			// Upload each file sequentially
 			for (let i = 0; i < uploadFiles.length; i++) {
 				const file = uploadFiles[i];
@@ -246,6 +255,7 @@
 			uploadError = e instanceof Error ? e.message : 'Failed to upload photo';
 		} finally {
 			isUploading = false;
+			setCurrentEmployee(null);
 		}
 	}
 
@@ -978,7 +988,7 @@
 			<Button variant="secondary" onclick={closeUploadModal} disabled={isUploading}>Cancel</Button>
 			<Button
 				variant="primary"
-				onclick={handleUploadPhotos}
+				onclick={handleUploadClick}
 				disabled={uploadFiles.length === 0}
 				loading={isUploading}
 			>
@@ -1002,6 +1012,14 @@
 	title="Verify Employee"
 	onClose={() => (showNoteEmployeeModal = false)}
 	onSuccess={handleNoteEmployeeSuccess}
+/>
+
+<!-- Employee PIN Modal for Photo Uploads -->
+<EmployeeIdModal
+	open={showUploadEmployeeModal}
+	title="Verify Employee"
+	onClose={() => (showUploadEmployeeModal = false)}
+	onSuccess={handleUploadEmployeeSuccess}
 />
 
 <style>
