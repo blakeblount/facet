@@ -1,21 +1,19 @@
 /**
- * Admin authentication store for managing admin PIN session state.
+ * Admin authentication store for managing admin session state.
  *
  * Provides a reactive store that:
  * - Tracks admin authentication status
- * - Stores the verified admin PIN for API calls
- * - Persists session in sessionStorage (cleared on browser close)
+ * - Uses session-based auth (session token stored in api.ts)
+ * - Persists auth state in sessionStorage (cleared on browser close)
  */
 
-import { verifyAdminPin, ApiClientError } from '$lib/services/api';
+import { verifyAdminPin, adminLogout, hasAdminSession, ApiClientError } from '$lib/services/api';
 
-const STORAGE_KEY = 'facet_admin_pin';
+const STORAGE_KEY = 'facet_admin_auth';
 
 interface AdminAuthState {
 	/** Whether the admin is currently authenticated */
 	isAuthenticated: boolean;
-	/** The verified admin PIN (for API calls) */
-	pin: string | null;
 	/** Whether authentication is in progress */
 	isVerifying: boolean;
 	/** Last verification error message */
@@ -25,7 +23,6 @@ interface AdminAuthState {
 function createAdminAuthStore() {
 	const state = $state<AdminAuthState>({
 		isAuthenticated: false,
-		pin: null,
 		isVerifying: false,
 		error: null
 	});
@@ -38,12 +35,14 @@ function createAdminAuthStore() {
 			return;
 		}
 
+		// Check if we have an active session
 		const stored = sessionStorage.getItem(STORAGE_KEY);
-		if (stored) {
-			// We have a stored PIN - assume it's still valid
-			// The API will reject it if it's been changed
-			state.pin = stored;
+		if (stored === 'true' && hasAdminSession()) {
 			state.isAuthenticated = true;
+		} else {
+			// Clear any stale auth state
+			sessionStorage.removeItem(STORAGE_KEY);
+			state.isAuthenticated = false;
 		}
 	}
 
@@ -55,15 +54,15 @@ function createAdminAuthStore() {
 		state.error = null;
 
 		try {
+			// verifyAdminPin now automatically stores the session token
 			await verifyAdminPin(pin);
 
-			// PIN is valid - store it
-			state.pin = pin;
+			// Session is now active
 			state.isAuthenticated = true;
 
-			// Persist in sessionStorage
+			// Persist auth state in sessionStorage
 			if (typeof window !== 'undefined') {
-				sessionStorage.setItem(STORAGE_KEY, pin);
+				sessionStorage.setItem(STORAGE_KEY, 'true');
 			}
 
 			return true;
@@ -86,9 +85,11 @@ function createAdminAuthStore() {
 	/**
 	 * Clear the admin session
 	 */
-	function logout() {
+	async function logout() {
+		// Log out on the server (invalidates session token)
+		await adminLogout();
+
 		state.isAuthenticated = false;
-		state.pin = null;
 		state.error = null;
 
 		if (typeof window !== 'undefined') {
@@ -107,11 +108,6 @@ function createAdminAuthStore() {
 		/** Whether admin is authenticated (reactive) */
 		get isAuthenticated() {
 			return state.isAuthenticated;
-		},
-
-		/** The verified admin PIN for API calls (reactive) */
-		get pin() {
-			return state.pin;
 		},
 
 		/** Whether verification is in progress (reactive) */

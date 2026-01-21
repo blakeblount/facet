@@ -1,3 +1,4 @@
+use api::repositories::AdminSessionRepository;
 use api::{api_router, build_cors_layer, create_pool, test_connection, AppState, Config, DbConfig};
 use std::net::SocketAddr;
 use tokio::signal;
@@ -31,6 +32,18 @@ async fn main() {
     test_connection(&db_pool)
         .await
         .expect("Failed to connect to database");
+
+    // Clean up any expired admin sessions on startup
+    match AdminSessionRepository::delete_expired(&db_pool).await {
+        Ok(count) => {
+            if count > 0 {
+                tracing::info!("Cleaned up {} expired admin session(s)", count);
+            }
+        }
+        Err(err) => {
+            tracing::warn!("Failed to clean up expired sessions: {:?}", err);
+        }
+    }
 
     // Create application state
     let state = AppState::new(db_pool);

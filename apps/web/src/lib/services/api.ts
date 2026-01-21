@@ -3,7 +3,7 @@
  *
  * Provides type-safe access to all API endpoints with:
  * - Automatic X-Employee-ID header injection
- * - X-Admin-PIN header for admin operations
+ * - X-Admin-Session header for admin operations (session-based auth)
  * - Consistent error handling
  * - Response parsing and type safety
  */
@@ -106,6 +106,65 @@ export function hasCurrentEmployee(): boolean {
 }
 
 // =============================================================================
+// Admin Session Context
+// =============================================================================
+
+/**
+ * The current admin session token.
+ * Set after successful admin PIN verification.
+ */
+let adminSessionToken: string | null = null;
+
+/**
+ * Expiration timestamp for the current admin session.
+ */
+let adminSessionExpiresAt: Date | null = null;
+
+/**
+ * Set the admin session token.
+ * Called internally after successful admin PIN verification.
+ */
+function setAdminSession(token: string, expiresAt: string): void {
+	adminSessionToken = token;
+	adminSessionExpiresAt = new Date(expiresAt);
+}
+
+/**
+ * Clear the admin session.
+ * Call this after logout or when the session expires.
+ */
+export function clearAdminSession(): void {
+	adminSessionToken = null;
+	adminSessionExpiresAt = null;
+}
+
+/**
+ * Check if there's an active admin session.
+ */
+export function hasAdminSession(): boolean {
+	if (!adminSessionToken || !adminSessionExpiresAt) {
+		return false;
+	}
+	// Check if session has expired
+	if (new Date() > adminSessionExpiresAt) {
+		clearAdminSession();
+		return false;
+	}
+	return true;
+}
+
+/**
+ * Get the current admin session token.
+ * Returns null if no session or session has expired.
+ */
+export function getAdminSessionToken(): string | null {
+	if (!hasAdminSession()) {
+		return null;
+	}
+	return adminSessionToken;
+}
+
+// =============================================================================
 // Error Handling
 // =============================================================================
 
@@ -157,8 +216,9 @@ export class ApiClientError extends Error {
 
 /**
  * Build headers for an API request.
+ * @param useAdminSession - If true, includes the X-Admin-Session header if a session is active
  */
-function buildHeaders(adminPin?: string): HeadersInit {
+function buildHeaders(useAdminSession?: boolean): HeadersInit {
 	const headers: HeadersInit = {
 		'Content-Type': 'application/json'
 	};
@@ -167,8 +227,8 @@ function buildHeaders(adminPin?: string): HeadersInit {
 		headers['X-Employee-ID'] = currentEmployeeId;
 	}
 
-	if (adminPin) {
-		headers['X-Admin-PIN'] = adminPin;
+	if (useAdminSession && adminSessionToken) {
+		headers['X-Admin-Session'] = adminSessionToken;
 	}
 
 	return headers;
@@ -236,12 +296,13 @@ async function get<T>(path: string, params?: Record<string, unknown>): Promise<T
 
 /**
  * Make a POST request to the API.
+ * @param useAdminSession - If true, includes admin session authentication
  */
-async function post<T>(path: string, body?: unknown, adminPin?: string): Promise<T> {
+async function post<T>(path: string, body?: unknown, useAdminSession?: boolean): Promise<T> {
 	const url = buildUrl(path);
 	const response = await fetch(url, {
 		method: 'POST',
-		headers: buildHeaders(adminPin),
+		headers: buildHeaders(useAdminSession),
 		body: body ? JSON.stringify(body) : undefined
 	});
 	return parseResponse<T>(response);
@@ -249,12 +310,13 @@ async function post<T>(path: string, body?: unknown, adminPin?: string): Promise
 
 /**
  * Make a PUT request to the API.
+ * @param useAdminSession - If true, includes admin session authentication
  */
-async function put<T>(path: string, body?: unknown, adminPin?: string): Promise<T> {
+async function put<T>(path: string, body?: unknown, useAdminSession?: boolean): Promise<T> {
 	const url = buildUrl(path);
 	const response = await fetch(url, {
 		method: 'PUT',
-		headers: buildHeaders(adminPin),
+		headers: buildHeaders(useAdminSession),
 		body: body ? JSON.stringify(body) : undefined
 	});
 	return parseResponse<T>(response);
@@ -262,28 +324,25 @@ async function put<T>(path: string, body?: unknown, adminPin?: string): Promise<
 
 /**
  * Make a DELETE request to the API.
+ * @param useAdminSession - If true, includes admin session authentication
  */
-async function del<T>(path: string, adminPin?: string): Promise<T> {
+async function del<T>(path: string, useAdminSession?: boolean): Promise<T> {
 	const url = buildUrl(path);
 	const response = await fetch(url, {
 		method: 'DELETE',
-		headers: buildHeaders(adminPin)
+		headers: buildHeaders(useAdminSession)
 	});
 	return parseResponse<T>(response);
 }
 
 /**
- * Make a GET request to the API with admin PIN.
+ * Make a GET request to the API with admin session authentication.
  */
-async function getWithAdmin<T>(
-	path: string,
-	adminPin: string,
-	params?: Record<string, unknown>
-): Promise<T> {
+async function getWithAdmin<T>(path: string, params?: Record<string, unknown>): Promise<T> {
 	const url = buildUrl(path, params);
 	const response = await fetch(url, {
 		method: 'GET',
-		headers: buildHeaders(adminPin)
+		headers: buildHeaders(true)
 	});
 	return parseResponse<T>(response);
 }
@@ -336,14 +395,14 @@ export async function createTicket(request: CreateTicketRequest): Promise<Create
 /**
  * Update an existing ticket.
  * Requires X-Employee-ID header (set via setCurrentEmployee).
- * For closed/archived tickets, requires adminPin.
+ * For closed/archived tickets, requires admin session.
  */
 export async function updateTicket(
 	ticketId: string,
 	request: UpdateTicketRequest,
-	adminPin?: string
+	useAdminSession?: boolean
 ): Promise<Ticket> {
-	return put<Ticket>(`/tickets/${ticketId}`, request, adminPin);
+	return put<Ticket>(`/tickets/${ticketId}`, request, useAdminSession);
 }
 
 /**
@@ -523,53 +582,43 @@ export async function createCustomer(request: CreateCustomerRequest): Promise<Cu
 
 /**
  * List employees (admin only).
- * Requires admin PIN for authorization.
+ * Requires active admin session.
  * By default returns only active employees.
  * Use includeInactive=true to include inactive employees.
  */
-export async function listEmployees(
-	adminPin: string,
-	includeInactive?: boolean
-): Promise<ListEmployeesResponse> {
+export async function listEmployees(includeInactive?: boolean): Promise<ListEmployeesResponse> {
 	const params = includeInactive ? { include_inactive: true } : undefined;
-	return getWithAdmin<ListEmployeesResponse>('/employees', adminPin, params);
+	return getWithAdmin<ListEmployeesResponse>('/employees', params);
 }
 
 /**
  * Create a new employee (admin only).
- * Requires admin PIN for authorization.
+ * Requires active admin session.
  * Returns the created employee summary.
  */
-export async function createEmployee(
-	adminPin: string,
-	request: CreateEmployeeRequest
-): Promise<EmployeeSummary> {
-	return post<EmployeeSummary>('/employees', request, adminPin);
+export async function createEmployee(request: CreateEmployeeRequest): Promise<EmployeeSummary> {
+	return post<EmployeeSummary>('/employees', request, true);
 }
 
 /**
  * Update an employee (admin only).
- * Requires admin PIN for authorization.
+ * Requires active admin session.
  * Returns the updated employee summary.
  */
 export async function updateEmployee(
-	adminPin: string,
 	employeeId: string,
 	request: UpdateEmployeeRequest
 ): Promise<EmployeeSummary> {
-	return put<EmployeeSummary>(`/employees/${employeeId}`, request, adminPin);
+	return put<EmployeeSummary>(`/employees/${employeeId}`, request, true);
 }
 
 /**
  * Delete an employee (admin only).
- * Requires admin PIN for authorization.
+ * Requires active admin session.
  * Returns deletion status with optional warning about history loss.
  */
-export async function deleteEmployee(
-	adminPin: string,
-	employeeId: string
-): Promise<DeleteEmployeeResponse> {
-	return del<DeleteEmployeeResponse>(`/employees/${employeeId}`, adminPin);
+export async function deleteEmployee(employeeId: string): Promise<DeleteEmployeeResponse> {
+	return del<DeleteEmployeeResponse>(`/employees/${employeeId}`, true);
 }
 
 /**
@@ -583,18 +632,43 @@ export async function verifyEmployeePin(pin: string): Promise<VerifyPinResponse>
 
 /**
  * Response from admin PIN verification.
+ * Includes a session token for subsequent authenticated requests.
  */
 export interface AdminVerifyResponse {
 	valid: boolean;
+	session_token: string;
+	expires_at: string;
 }
 
 /**
- * Verify the admin PIN.
- * Returns { valid: true } if the PIN is correct.
+ * Verify the admin PIN and create an admin session.
+ * On success, stores the session token for subsequent admin requests.
+ * Returns { valid: true, session_token: "...", expires_at: "..." } if the PIN is correct.
  * Throws ApiClientError with code 'INVALID_PIN' if incorrect.
  */
 export async function verifyAdminPin(pin: string): Promise<AdminVerifyResponse> {
-	return post<AdminVerifyResponse>('/admin/verify', { pin });
+	const response = await post<AdminVerifyResponse>('/admin/verify', { pin });
+	// Store the session token for subsequent requests
+	if (response.valid && response.session_token) {
+		setAdminSession(response.session_token, response.expires_at);
+	}
+	return response;
+}
+
+/**
+ * Log out the current admin session.
+ * Invalidates the session on the server and clears local session state.
+ */
+export async function adminLogout(): Promise<void> {
+	if (adminSessionToken) {
+		try {
+			// Tell the server to invalidate the session
+			await post<{ success: boolean }>('/admin/logout', undefined, true);
+		} catch {
+			// Ignore errors - we'll clear the local session anyway
+		}
+	}
+	clearAdminSession();
 }
 
 // =============================================================================
@@ -616,27 +690,25 @@ export async function listStorageLocations(
 
 /**
  * Create a new storage location (admin only).
- * Requires admin PIN for authorization.
+ * Requires active admin session.
  * Returns the created location summary.
  */
 export async function createStorageLocation(
-	adminPin: string,
 	request: CreateStorageLocationRequest
 ): Promise<StorageLocationSummary> {
-	return post<StorageLocationSummary>('/locations', request, adminPin);
+	return post<StorageLocationSummary>('/locations', request, true);
 }
 
 /**
  * Update a storage location (admin only).
- * Requires admin PIN for authorization.
+ * Requires active admin session.
  * Returns the updated location summary.
  */
 export async function updateStorageLocation(
-	adminPin: string,
 	locationId: string,
 	request: UpdateStorageLocationRequest
 ): Promise<StorageLocationSummary> {
-	return put<StorageLocationSummary>(`/locations/${locationId}`, request, adminPin);
+	return put<StorageLocationSummary>(`/locations/${locationId}`, request, true);
 }
 
 // =============================================================================
@@ -653,17 +725,15 @@ export async function getStoreSettings(): Promise<StoreSettings> {
 
 /**
  * Update store settings.
- * Requires admin PIN authentication.
+ * Requires active admin session.
  *
- * @param adminPin - Admin PIN for authentication
  * @param updates - Partial store settings to update
  * @returns Updated store settings
  */
 export async function updateStoreSettings(
-	adminPin: string,
 	updates: UpdateStoreSettingsRequest
 ): Promise<StoreSettings> {
-	return put<StoreSettings>('/settings', updates, adminPin);
+	return put<StoreSettings>('/settings', updates, true);
 }
 
 // =============================================================================

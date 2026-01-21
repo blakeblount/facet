@@ -3,6 +3,7 @@
 //! Repositories handle database operations and provide a clean interface
 //! for data access. Each repository is responsible for a specific domain entity.
 
+pub mod admin_session;
 pub mod customer;
 pub mod employee;
 pub mod field_history;
@@ -13,6 +14,7 @@ pub mod ticket;
 pub mod ticket_note;
 pub mod ticket_photo;
 
+pub use admin_session::AdminSessionRepository;
 pub use customer::CustomerRepository;
 pub use employee::EmployeeRepository;
 pub use field_history::FieldHistoryRepository;

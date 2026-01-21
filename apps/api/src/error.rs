@@ -14,6 +14,7 @@ use serde::Serialize;
 pub mod codes {
     pub const VALIDATION_ERROR: &str = "VALIDATION_ERROR";
     pub const INVALID_PIN: &str = "INVALID_PIN";
+    pub const UNAUTHORIZED: &str = "UNAUTHORIZED";
     pub const FORBIDDEN: &str = "FORBIDDEN";
     pub const NOT_FOUND: &str = "NOT_FOUND";
     pub const CONFLICT: &str = "CONFLICT";
@@ -38,6 +39,8 @@ pub enum AppError {
     ValidationError(String),
     /// Employee or admin PIN incorrect (401).
     InvalidPin(String),
+    /// Missing or invalid authentication (401).
+    Unauthorized(String),
     /// Action not allowed (403).
     Forbidden(String),
     /// Resource not found (404).
@@ -62,6 +65,7 @@ impl AppError {
         match self {
             AppError::ValidationError(_) => codes::VALIDATION_ERROR,
             AppError::InvalidPin(_) => codes::INVALID_PIN,
+            AppError::Unauthorized(_) => codes::UNAUTHORIZED,
             AppError::Forbidden(_) => codes::FORBIDDEN,
             AppError::NotFound(_) => codes::NOT_FOUND,
             AppError::Conflict(_) => codes::CONFLICT,
@@ -78,6 +82,7 @@ impl AppError {
         match self {
             AppError::ValidationError(_) => StatusCode::BAD_REQUEST,
             AppError::InvalidPin(_) => StatusCode::UNAUTHORIZED,
+            AppError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
             AppError::Forbidden(_) => StatusCode::FORBIDDEN,
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Conflict(_) => StatusCode::CONFLICT,
@@ -94,6 +99,7 @@ impl AppError {
         match self {
             AppError::ValidationError(msg)
             | AppError::InvalidPin(msg)
+            | AppError::Unauthorized(msg)
             | AppError::Forbidden(msg)
             | AppError::NotFound(msg)
             | AppError::Conflict(msg)
@@ -121,6 +127,11 @@ impl AppError {
     /// Create an invalid PIN error.
     pub fn invalid_pin(message: impl Into<String>) -> Self {
         AppError::InvalidPin(message.into())
+    }
+
+    /// Create an unauthorized error (missing or invalid authentication).
+    pub fn unauthorized(message: impl Into<String>) -> Self {
+        AppError::Unauthorized(message.into())
     }
 
     /// Create a forbidden error.

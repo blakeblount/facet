@@ -2,6 +2,7 @@
 //!
 //! Models represent the core business entities used throughout the application.
 
+pub mod admin_session;
 pub mod customer;
 pub mod employee;
 pub mod field_history;
@@ -12,6 +13,7 @@ pub mod ticket;
 pub mod ticket_note;
 pub mod ticket_photo;
 
+pub use admin_session::{AdminSession, AdminSessionResponse, CreateAdminSession};
 pub use customer::{CreateCustomer, Customer};
 pub use employee::{CreateEmployee, Employee, EmployeeRole, EmployeeSummary, UpdateEmployee};
 pub use field_history::{CreateFieldHistory, FieldHistoryEntry};

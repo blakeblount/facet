@@ -10,7 +10,7 @@ pub mod locations;
 pub mod settings;
 pub mod tickets;
 
-pub use admin::{admin_setup, change_pin, verify_admin};
+pub use admin::{admin_logout, admin_setup, change_pin, verify_admin, verify_admin_auth};
 pub use customers::{get_customer, search_customers};
 pub use employees::{
     create_employee, delete_employee, list_employees, update_employee, verify_employee_pin,

@@ -6,6 +6,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
@@ -13,15 +14,42 @@ use crate::auth::validate_pin_complexity;
 use crate::error::AppError;
 use crate::middleware::extract_client_ip;
 use crate::models::store_settings::StoreSettingsPublic;
-use crate::repositories::StoreSettingsRepository;
+use crate::repositories::{AdminSessionRepository, StoreSettingsRepository};
 use crate::response::ApiResponse;
 use crate::routes::AppState;
 
 // =============================================================================
-// Admin PIN Verification Helper
+// Admin Authentication Helpers
 // =============================================================================
 
+/// Verify admin authentication via session token (X-Admin-Session header).
+///
+/// This is the preferred authentication method. Session tokens are issued
+/// after successful PIN verification and avoid sending the PIN on every request.
+///
+/// Returns an error if the header is missing, or the session is invalid/expired.
+pub async fn verify_admin_session_header(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(), AppError> {
+    let token = headers
+        .get("X-Admin-Session")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| AppError::unauthorized("Missing X-Admin-Session header"))?;
+
+    let session = AdminSessionRepository::verify_and_touch(&state.db, token).await?;
+
+    if session.is_none() {
+        return Err(AppError::unauthorized("Invalid or expired session"));
+    }
+
+    Ok(())
+}
+
 /// Extract and verify admin PIN from X-Admin-PIN header.
+///
+/// DEPRECATED: Use session-based authentication instead.
+/// This is kept for backwards compatibility but should not be used for new code.
 ///
 /// Returns an error if the header is missing or the PIN is invalid.
 async fn verify_admin_pin_header(state: &AppState, headers: &HeaderMap) -> Result<(), AppError> {
@@ -37,6 +65,26 @@ async fn verify_admin_pin_header(state: &AppState, headers: &HeaderMap) -> Resul
     }
 
     Ok(())
+}
+
+/// Verify admin authentication via either session token or PIN.
+///
+/// Prefers session token (X-Admin-Session) but falls back to PIN (X-Admin-PIN)
+/// for backwards compatibility. New clients should use session-based auth.
+pub async fn verify_admin_auth(state: &AppState, headers: &HeaderMap) -> Result<(), AppError> {
+    // Try session token first (preferred)
+    if headers.contains_key("X-Admin-Session") {
+        return verify_admin_session_header(state, headers).await;
+    }
+
+    // Fall back to PIN header (deprecated, for backwards compatibility)
+    if headers.contains_key("X-Admin-PIN") {
+        return verify_admin_pin_header(state, headers).await;
+    }
+
+    Err(AppError::unauthorized(
+        "Missing authentication. Provide X-Admin-Session header.",
+    ))
 }
 
 // =============================================================================
@@ -164,7 +212,7 @@ pub struct ChangePinResponse {
 }
 
 // =============================================================================
-// POST /admin/verify - Verify Admin PIN
+// POST /admin/verify - Verify Admin PIN and Get Session Token
 // =============================================================================
 
 /// Request body for admin PIN verification.
@@ -175,22 +223,34 @@ pub struct AdminVerifyRequest {
 }
 
 /// Response for successful admin verification.
+///
+/// Returns a session token that should be used for subsequent admin requests
+/// via the X-Admin-Session header instead of sending the PIN repeatedly.
 #[derive(Debug, Clone, Serialize)]
 pub struct AdminVerifyResponse {
     /// Whether the PIN was valid
     pub valid: bool,
+    /// Session token for subsequent requests (use in X-Admin-Session header)
+    pub session_token: String,
+    /// When the session expires (ISO 8601 format)
+    pub expires_at: DateTime<Utc>,
 }
 
-/// POST /api/v1/admin/verify - Verify the admin PIN.
+/// POST /api/v1/admin/verify - Verify the admin PIN and get a session token.
 ///
 /// This endpoint verifies that a given PIN matches the admin PIN.
-/// Used by the UI to unlock admin features.
+/// On success, it creates a new admin session and returns a session token
+/// that should be used for subsequent admin API requests.
 ///
 /// # Request Body
 /// - `pin`: The PIN to verify
 ///
 /// # Returns
-/// - Success: `{ "valid": true }`
+/// - Success: `{ "valid": true, "session_token": "...", "expires_at": "..." }`
+///
+/// # Session Usage
+/// Use the returned `session_token` in the `X-Admin-Session` header for all
+/// subsequent admin requests. This avoids sending the PIN on every request.
 ///
 /// # Errors
 /// - INVALID_PIN: If the PIN is incorrect
@@ -239,7 +299,14 @@ pub async fn verify_admin(
     // Record success to reset backoff
     state.rate_limit.record_success(client_ip).await;
 
-    let response = AdminVerifyResponse { valid: true };
+    // Create a new admin session
+    let session = AdminSessionRepository::create(&state.db).await?;
+
+    let response = AdminVerifyResponse {
+        valid: true,
+        session_token: session.session_token,
+        expires_at: session.expires_at,
+    };
     Ok(Json(ApiResponse::success(response)))
 }
 
@@ -250,24 +317,27 @@ pub async fn verify_admin(
 /// POST /api/v1/admin/change-pin - Change the admin PIN.
 ///
 /// This endpoint allows changing the admin PIN after initial setup.
-/// Requires the current admin PIN in the X-Admin-PIN header.
+/// Requires admin authentication via X-Admin-Session header (preferred)
+/// or X-Admin-PIN header (deprecated).
 ///
 /// # Request Headers
-/// - `X-Admin-PIN`: The current admin PIN
+/// - `X-Admin-Session`: Session token (preferred)
+/// - `X-Admin-PIN`: The current admin PIN (deprecated)
 ///
 /// # Request Body
 /// - `new_pin`: The new PIN to set
 ///
 /// # Errors
-/// - INVALID_PIN: If the X-Admin-PIN header is missing or incorrect
+/// - UNAUTHORIZED: If not authenticated
+/// - INVALID_PIN: If the X-Admin-PIN header is incorrect (deprecated auth)
 /// - VALIDATION_ERROR: If the new PIN is empty or too weak
 pub async fn change_pin(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(body): Json<ChangePinRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Verify the current admin PIN
-    verify_admin_pin_header(&state, &headers).await?;
+    // Verify admin authentication (session or PIN)
+    verify_admin_auth(&state, &headers).await?;
 
     // Validate new PIN - check if empty first
     if body.new_pin.is_empty() {
@@ -289,6 +359,45 @@ pub async fn change_pin(
     let settings = StoreSettingsRepository::change_admin_pin(&state.db, &body.new_pin).await?;
 
     let response = ChangePinResponse { settings };
+    Ok(Json(ApiResponse::success(response)))
+}
+
+// =============================================================================
+// POST /admin/logout - End Admin Session
+// =============================================================================
+
+/// Response for successful admin logout.
+#[derive(Debug, Clone, Serialize)]
+pub struct AdminLogoutResponse {
+    /// Whether the logout was successful
+    pub success: bool,
+}
+
+/// POST /api/v1/admin/logout - End the admin session.
+///
+/// Invalidates the current admin session token. After calling this endpoint,
+/// the session token can no longer be used for authentication.
+///
+/// # Request Headers
+/// - `X-Admin-Session`: The session token to invalidate
+///
+/// # Returns
+/// - Success: `{ "success": true }`
+///
+/// # Notes
+/// - Does not return an error if the session is already invalid/expired
+/// - If no session header is provided, returns success (idempotent)
+pub async fn admin_logout(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    // Get the session token if present
+    if let Some(token) = headers.get("X-Admin-Session").and_then(|v| v.to_str().ok()) {
+        AdminSessionRepository::delete_by_token(&state.db, token).await?;
+    }
+
+    // Always return success (idempotent)
+    let response = AdminLogoutResponse { success: true };
     Ok(Json(ApiResponse::success(response)))
 }
 
@@ -395,16 +504,37 @@ mod tests {
 
     #[test]
     fn test_admin_verify_response_serialization() {
-        let response = AdminVerifyResponse { valid: true };
+        let response = AdminVerifyResponse {
+            valid: true,
+            session_token: "test_token_abc123".to_string(),
+            expires_at: chrono::Utc::now() + chrono::Duration::minutes(30),
+        };
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("\"valid\":true"));
+        assert!(json.contains("\"session_token\":\"test_token_abc123\""));
+        assert!(json.contains("\"expires_at\":"));
     }
 
     #[test]
-    fn test_admin_verify_response_valid_false() {
-        let response = AdminVerifyResponse { valid: false };
+    fn test_admin_verify_response_contains_session_info() {
+        let response = AdminVerifyResponse {
+            valid: true,
+            session_token: "secure_random_token".to_string(),
+            expires_at: chrono::Utc::now() + chrono::Duration::minutes(30),
+        };
         let json = serde_json::to_string(&response).unwrap();
-        assert!(json.contains("\"valid\":false"));
+        // Should contain all required fields
+        assert!(json.contains("session_token"));
+        assert!(json.contains("expires_at"));
+    }
+
+    // Tests for AdminLogoutResponse
+
+    #[test]
+    fn test_admin_logout_response_serialization() {
+        let response = AdminLogoutResponse { success: true };
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"success\":true"));
     }
 
     // Tests for ChangePinResponse

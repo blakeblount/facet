@@ -3,7 +3,9 @@
 	import Input from './Input.svelte';
 	import Button from './Button.svelte';
 	import {
-		verifyEmployeePin,
+		verifyAdminPin,
+		adminLogout,
+		hasAdminSession,
 		listEmployees,
 		createEmployee,
 		updateEmployee,
@@ -14,7 +16,6 @@
 		createStorageLocation,
 		updateStorageLocation,
 		ApiClientError,
-		type VerifyPinResponse,
 		type EmployeeSummary,
 		type EmployeeRole,
 		type StoreSettings,
@@ -34,8 +35,7 @@
 
 	// Authentication state
 	let isAuthenticated = $state(false);
-	let authenticatedEmployee: VerifyPinResponse | null = $state(null);
-	let adminPin = $state('');
+	let authenticatedEmployee: { name: string; role: string } | null = $state(null);
 	let pin = $state('');
 	let pinError = $state('');
 	let isVerifying = $state(false);
@@ -114,7 +114,6 @@
 			// Reset to PIN entry state when opening
 			isAuthenticated = false;
 			authenticatedEmployee = null;
-			adminPin = '';
 			pin = '';
 			pinError = '';
 			isVerifying = false;
@@ -157,22 +156,18 @@
 		pinError = '';
 
 		try {
-			const employee = await verifyEmployeePin(pin);
+			// Verify admin PIN and create session (session token is stored automatically)
+			const response = await verifyAdminPin(pin);
 
-			// Check if employee is an admin
-			if (employee.role !== 'admin') {
-				pinError = 'Admin access required. Please use an admin PIN.';
-				return;
+			if (response.valid) {
+				// Authentication successful - session is now active
+				authenticatedEmployee = { name: 'Admin', role: 'admin' };
+				isAuthenticated = true;
 			}
-
-			// Authentication successful - store PIN for admin API calls
-			adminPin = pin;
-			authenticatedEmployee = employee;
-			isAuthenticated = true;
 		} catch (err) {
 			if (err instanceof ApiClientError) {
 				if (err.isCode('INVALID_PIN')) {
-					pinError = 'Invalid PIN. Please try again.';
+					pinError = 'Invalid admin PIN. Please try again.';
 				} else {
 					pinError = err.message || 'An error occurred. Please try again.';
 				}
@@ -184,8 +179,10 @@
 		}
 	}
 
-	function handleClose() {
+	async function handleClose() {
 		if (!isVerifying) {
+			// Log out when closing the settings modal
+			await adminLogout();
 			onClose?.();
 		}
 	}
@@ -269,7 +266,7 @@
 	});
 
 	async function handleSaveStoreInfo() {
-		if (!adminPin) return;
+		if (!hasAdminSession()) return;
 
 		// Validate required fields
 		if (!storeFormName.trim()) {
@@ -294,7 +291,7 @@
 				ticket_prefix: storeFormTicketPrefix.trim()
 			};
 
-			const updatedSettings = await updateStoreSettings(adminPin, updates);
+			const updatedSettings = await updateStoreSettings(updates);
 			storeSettings = updatedSettings;
 			populateStoreInfoForm(updatedSettings);
 			storeInfoSuccess = 'Settings saved successfully';
@@ -319,13 +316,13 @@
 	// =============================================================================
 
 	async function loadEmployees() {
-		if (!adminPin) return;
+		if (!hasAdminSession()) return;
 
 		employeesLoading = true;
 		employeesError = '';
 
 		try {
-			const response = await listEmployees(adminPin, showInactive);
+			const response = await listEmployees(showInactive);
 			employees = response.employees;
 		} catch (err) {
 			if (err instanceof ApiClientError) {
@@ -344,12 +341,7 @@
 
 	$effect(() => {
 		// Access currentShowInactive to make this effect depend on it
-		if (
-			isAuthenticated &&
-			activeTab === 'employees' &&
-			adminPin &&
-			currentShowInactive !== undefined
-		) {
+		if (isAuthenticated && activeTab === 'employees' && currentShowInactive !== undefined) {
 			loadEmployees();
 		}
 	});
@@ -383,7 +375,7 @@
 	}
 
 	async function handleSaveEmployee() {
-		if (!adminPin) return;
+		if (!hasAdminSession()) return;
 
 		// Validate
 		if (!employeeFormName.trim()) {
@@ -402,14 +394,14 @@
 		try {
 			if (editingEmployee) {
 				// Update existing employee
-				await updateEmployee(adminPin, editingEmployee.employee_id, {
+				await updateEmployee(editingEmployee.employee_id, {
 					name: employeeFormName.trim(),
 					pin: employeeFormPin.trim() || undefined,
 					role: employeeFormRole
 				});
 			} else {
 				// Create new employee
-				await createEmployee(adminPin, {
+				await createEmployee({
 					name: employeeFormName.trim(),
 					pin: employeeFormPin.trim(),
 					role: employeeFormRole
@@ -430,10 +422,10 @@
 	}
 
 	async function handleToggleActive(employee: EmployeeSummary) {
-		if (!adminPin) return;
+		if (!hasAdminSession()) return;
 
 		try {
-			await updateEmployee(adminPin, employee.employee_id, {
+			await updateEmployee(employee.employee_id, {
 				is_active: !employee.is_active
 			});
 			await loadEmployees();
@@ -458,13 +450,13 @@
 	}
 
 	async function handleConfirmDelete() {
-		if (!adminPin || !deleteConfirmEmployee) return;
+		if (!hasAdminSession() || !deleteConfirmEmployee) return;
 
 		deleteLoading = true;
 		deleteError = '';
 
 		try {
-			const response = await deleteEmployee(adminPin, deleteConfirmEmployee.employee_id);
+			const response = await deleteEmployee(deleteConfirmEmployee.employee_id);
 			if (response.warning) {
 				// Could show this warning somewhere, but for now just log it
 				console.warn(response.warning);
@@ -542,7 +534,7 @@
 	}
 
 	async function handleSaveLocation() {
-		if (!adminPin) return;
+		if (!hasAdminSession()) return;
 
 		// Validate
 		if (!locationFormName.trim()) {
@@ -556,12 +548,12 @@
 		try {
 			if (editingLocation) {
 				// Update existing location
-				await updateStorageLocation(adminPin, editingLocation.location_id, {
+				await updateStorageLocation(editingLocation.location_id, {
 					name: locationFormName.trim()
 				});
 			} else {
 				// Create new location
-				await createStorageLocation(adminPin, {
+				await createStorageLocation({
 					name: locationFormName.trim()
 				});
 			}
@@ -580,10 +572,10 @@
 	}
 
 	async function handleToggleLocationActive(location: StorageLocationSummary) {
-		if (!adminPin) return;
+		if (!hasAdminSession()) return;
 
 		try {
-			await updateStorageLocation(adminPin, location.location_id, {
+			await updateStorageLocation(location.location_id, {
 				is_active: !location.is_active
 			});
 			await loadLocations();

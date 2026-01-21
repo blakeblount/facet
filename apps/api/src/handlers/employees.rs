@@ -12,33 +12,12 @@ use uuid::Uuid;
 
 use crate::auth::verify_pin;
 use crate::error::AppError;
+use crate::handlers::verify_admin_auth;
 use crate::middleware::extract_client_ip;
 use crate::models::employee::{CreateEmployee, EmployeeRole, EmployeeSummary, UpdateEmployee};
-use crate::repositories::{EmployeeRepository, StoreSettingsRepository};
+use crate::repositories::EmployeeRepository;
 use crate::response::{created, ApiResponse};
 use crate::routes::AppState;
-
-// =============================================================================
-// Admin PIN Verification Helper
-// =============================================================================
-
-/// Extract and verify admin PIN from X-Admin-PIN header.
-///
-/// Returns an error if the header is missing or the PIN is invalid.
-async fn verify_admin_pin_header(state: &AppState, headers: &HeaderMap) -> Result<(), AppError> {
-    let pin = headers
-        .get("X-Admin-PIN")
-        .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| AppError::invalid_pin("Missing X-Admin-PIN header"))?;
-
-    let is_valid = StoreSettingsRepository::verify_admin_pin(&state.db, pin).await?;
-
-    if !is_valid {
-        return Err(AppError::invalid_pin("Invalid admin PIN"));
-    }
-
-    Ok(())
-}
 
 // =============================================================================
 // GET /employees (admin) - List Employees
@@ -64,7 +43,8 @@ pub struct ListEmployeesResponse {
 
 /// GET /api/v1/employees - List all employees (admin only).
 ///
-/// Requires X-Admin-PIN header for authorization.
+/// Requires admin authentication via X-Admin-Session header (preferred)
+/// or X-Admin-PIN header (deprecated).
 /// Returns a list of employees (without pin_hash).
 /// By default only active employees are returned.
 /// Use `?include_inactive=true` to include inactive employees.
@@ -73,8 +53,8 @@ pub async fn list_employees(
     headers: HeaderMap,
     Query(query): Query<ListEmployeesQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Verify admin PIN
-    verify_admin_pin_header(&state, &headers).await?;
+    // Verify admin authentication (session or PIN)
+    verify_admin_auth(&state, &headers).await?;
 
     // Fetch employees from repository
     let employees = EmployeeRepository::list(&state.db, query.include_inactive).await?;
@@ -164,7 +144,8 @@ pub async fn verify_employee_pin(
 
 /// POST /api/v1/employees - Create a new employee (admin only).
 ///
-/// Requires X-Admin-PIN header for authorization.
+/// Requires admin authentication via X-Admin-Session header (preferred)
+/// or X-Admin-PIN header (deprecated).
 /// Creates an employee with the provided name, PIN, and role.
 /// The PIN is hashed before storage using argon2.
 ///
@@ -174,8 +155,8 @@ pub async fn create_employee(
     headers: HeaderMap,
     Json(body): Json<CreateEmployee>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Verify admin PIN
-    verify_admin_pin_header(&state, &headers).await?;
+    // Verify admin authentication (session or PIN)
+    verify_admin_auth(&state, &headers).await?;
 
     // Validate input
     if body.name.trim().is_empty() {
@@ -206,7 +187,8 @@ pub async fn create_employee(
 
 /// PUT /api/v1/employees/:employee_id - Update an employee (admin only).
 ///
-/// Requires X-Admin-PIN header for authorization.
+/// Requires admin authentication via X-Admin-Session header (preferred)
+/// or X-Admin-PIN header (deprecated).
 /// Updates employee fields: name, role, is_active.
 /// If PIN is provided, it's re-hashed before storage.
 ///
@@ -217,8 +199,8 @@ pub async fn update_employee(
     Path(employee_id): Path<Uuid>,
     Json(body): Json<UpdateEmployee>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Verify admin PIN
-    verify_admin_pin_header(&state, &headers).await?;
+    // Verify admin authentication (session or PIN)
+    verify_admin_auth(&state, &headers).await?;
 
     // Validate input - if name is provided, it shouldn't be empty
     if let Some(ref name) = body.name {
@@ -268,7 +250,8 @@ pub struct DeleteEmployeeResponse {
 
 /// DELETE /api/v1/employees/:employee_id - Delete an employee (admin only).
 ///
-/// Requires X-Admin-PIN header for authorization.
+/// Requires admin authentication via X-Admin-Session header (preferred)
+/// or X-Admin-PIN header (deprecated).
 /// Checks for attribution history and includes a warning if history exists.
 /// Performs a hard delete (employee is permanently removed).
 ///
@@ -278,8 +261,8 @@ pub async fn delete_employee(
     headers: HeaderMap,
     Path(employee_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Verify admin PIN
-    verify_admin_pin_header(&state, &headers).await?;
+    // Verify admin authentication (session or PIN)
+    verify_admin_auth(&state, &headers).await?;
 
     // Check if employee exists
     let employee = EmployeeRepository::find_by_id(&state.db, employee_id).await?;

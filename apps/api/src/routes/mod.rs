@@ -110,7 +110,8 @@ pub fn api_router(state: AppState) -> Router {
     let admin_routes = Router::new()
         .route("/setup", post(handlers::admin_setup))
         .route("/verify", post(handlers::verify_admin))
-        .route("/change-pin", post(handlers::change_pin));
+        .route("/change-pin", post(handlers::change_pin))
+        .route("/logout", post(handlers::admin_logout));
 
     // Settings routes
     let settings_routes = Router::new().route(

@@ -3,6 +3,7 @@
 use axum::{extract::State, http::HeaderMap, response::IntoResponse, Json};
 
 use crate::error::AppError;
+use crate::handlers::verify_admin_auth;
 use crate::models::store_settings::{StoreSettingsPublic, UpdateStoreSettings};
 use crate::repositories::StoreSettingsRepository;
 use crate::response::ApiResponse;
@@ -33,7 +34,8 @@ pub async fn get_settings(State(state): State<AppState>) -> Result<impl IntoResp
 /// will be updated; other fields retain their current values.
 ///
 /// # Request Headers
-/// - `X-Admin-PIN`: Required admin PIN for authentication
+/// - `X-Admin-Session`: Session token (preferred)
+/// - `X-Admin-PIN`: Admin PIN (deprecated)
 ///
 /// # Request Body (all fields optional)
 /// - `store_name`: Store display name
@@ -44,23 +46,14 @@ pub async fn get_settings(State(state): State<AppState>) -> Result<impl IntoResp
 /// - `max_photos_per_ticket`: Maximum photos allowed per ticket
 ///
 /// # Errors
-/// - INVALID_PIN: If the X-Admin-PIN header is missing or incorrect
+/// - UNAUTHORIZED: If not authenticated
 pub async fn update_settings(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(body): Json<UpdateStoreSettings>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Verify admin PIN from header
-    let pin = headers
-        .get("X-Admin-PIN")
-        .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| AppError::invalid_pin("Missing X-Admin-PIN header"))?;
-
-    let is_valid = StoreSettingsRepository::verify_admin_pin(&state.db, pin).await?;
-
-    if !is_valid {
-        return Err(AppError::invalid_pin("Invalid admin PIN"));
-    }
+    // Verify admin authentication (session or PIN)
+    verify_admin_auth(&state, &headers).await?;
 
     // Update the settings
     let settings = StoreSettingsRepository::update_settings(&state.db, body).await?;

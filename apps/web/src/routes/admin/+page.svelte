@@ -38,24 +38,24 @@
 
 	// When auth state changes, fetch employees
 	$effect(() => {
-		if (adminAuthStore.isAuthenticated && adminAuthStore.pin) {
+		if (adminAuthStore.isAuthenticated) {
 			fetchEmployees();
 		}
 	});
 
 	async function fetchEmployees() {
-		if (!adminAuthStore.pin) return;
+		if (!adminAuthStore.isAuthenticated) return;
 
 		employeesLoading = true;
 		employeesError = null;
 
 		try {
-			const response = await listEmployees(adminAuthStore.pin);
+			const response = await listEmployees();
 			employees = response.employees || [];
 		} catch (err) {
 			if (err instanceof ApiClientError) {
-				if (err.isCode('INVALID_PIN')) {
-					// PIN is no longer valid, logout and show auth modal
+				if (err.isCode('UNAUTHORIZED') || err.isCode('INVALID_PIN')) {
+					// Session is no longer valid, logout and show auth modal
 					adminAuthStore.logout();
 					showAuthModal = true;
 					employeesError = null;

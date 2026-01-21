@@ -33,6 +33,10 @@ argon2 = "0.5"
 # Rate limiting
 governor = "0.7"
 
+# Session token generation
+rand = "0.8"
+base64 = "0.22"
+
 [dev-dependencies]
 http-body-util = "0.1"
 serde_urlencoded = "0.7"

@@ -9,35 +9,14 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::error::AppError;
+use crate::handlers::verify_admin_auth;
 use crate::models::storage_location::{
     CreateStorageLocation, StorageLocationSummary, UpdateStorageLocation,
 };
-use crate::repositories::{StorageLocationRepository, StoreSettingsRepository};
+use crate::repositories::StorageLocationRepository;
 use crate::response::{created, ApiResponse};
 use crate::routes::AppState;
 use uuid::Uuid;
-
-// =============================================================================
-// Admin PIN Verification Helper
-// =============================================================================
-
-/// Extract and verify admin PIN from X-Admin-PIN header.
-///
-/// Returns an error if the header is missing or the PIN is invalid.
-async fn verify_admin_pin_header(state: &AppState, headers: &HeaderMap) -> Result<(), AppError> {
-    let pin = headers
-        .get("X-Admin-PIN")
-        .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| AppError::invalid_pin("Missing X-Admin-PIN header"))?;
-
-    let is_valid = StoreSettingsRepository::verify_admin_pin(&state.db, pin).await?;
-
-    if !is_valid {
-        return Err(AppError::invalid_pin("Invalid admin PIN"));
-    }
-
-    Ok(())
-}
 
 // =============================================================================
 // GET /locations - List Storage Locations
@@ -88,7 +67,8 @@ pub async fn list_locations(
 
 /// POST /api/v1/locations - Create a new storage location (admin only).
 ///
-/// Requires X-Admin-PIN header for authorization.
+/// Requires admin authentication via X-Admin-Session header (preferred)
+/// or X-Admin-PIN header (deprecated).
 /// Creates a storage location with the provided name.
 /// Name must be unique (case-insensitive).
 ///
@@ -98,8 +78,8 @@ pub async fn create_location(
     headers: HeaderMap,
     Json(body): Json<CreateStorageLocation>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Verify admin PIN
-    verify_admin_pin_header(&state, &headers).await?;
+    // Verify admin authentication (session or PIN)
+    verify_admin_auth(&state, &headers).await?;
 
     // Validate input
     let name = body.name.trim();
@@ -140,7 +120,8 @@ pub async fn create_location(
 
 /// PUT /api/v1/locations/:location_id - Update a storage location (admin only).
 ///
-/// Requires X-Admin-PIN header for authorization.
+/// Requires admin authentication via X-Admin-Session header (preferred)
+/// or X-Admin-PIN header (deprecated).
 /// Updates the location with the provided fields.
 /// Name must be unique (case-insensitive) if changed.
 ///
@@ -151,8 +132,8 @@ pub async fn update_location(
     axum::extract::Path(location_id): axum::extract::Path<Uuid>,
     Json(body): Json<UpdateStorageLocation>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Verify admin PIN
-    verify_admin_pin_header(&state, &headers).await?;
+    // Verify admin authentication (session or PIN)
+    verify_admin_auth(&state, &headers).await?;
 
     // Find the existing location
     let existing = StorageLocationRepository::find_by_id(&state.db, location_id).await?;
