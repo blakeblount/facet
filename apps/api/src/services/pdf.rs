@@ -11,6 +11,7 @@ use std::io::BufWriter;
 /// Label data for PDF generation.
 pub struct LabelData {
     pub ticket: Ticket,
+    pub customer_name: String,
 }
 
 /// Receipt data for PDF generation.
@@ -321,7 +322,7 @@ pub fn generate_label_pdf(data: &LabelData) -> Result<Vec<u8>, AppError> {
 
     // === Ticket Code (large, prominent, centered) ===
     // Place near top of label
-    let code_y = 19.0;
+    let code_y = 20.0;
     let code_text = &data.ticket.friendly_code;
 
     // Calculate approximate text width for centering (rough estimate: 3.5mm per char at size 14)
@@ -336,7 +337,22 @@ pub fn generate_label_pdf(data: &LabelData) -> Result<Vec<u8>, AppError> {
         &font_bold,
     );
 
-    // === Item Descriptor (smaller, below the code) ===
+    // === Customer Name (below ticket code) ===
+    // Truncate long names to fit on small label
+    let customer_name = truncate_text(&data.customer_name, 20);
+    let name_y = 14.5;
+    let name_width_estimate = customer_name.len() as f32 * 2.0; // Approx 2mm per char at size 9
+    let name_x = center_x - (name_width_estimate / 2.0);
+
+    current_layer.use_text(
+        &customer_name,
+        9.0,
+        Mm(name_x.max(margin)),
+        Mm(name_y),
+        &font,
+    );
+
+    // === Item Descriptor (smaller, below customer name) ===
     // Create a short descriptor from item_type and truncated description
     let descriptor = create_short_descriptor(
         data.ticket.item_type.as_deref(),
@@ -344,7 +360,7 @@ pub fn generate_label_pdf(data: &LabelData) -> Result<Vec<u8>, AppError> {
     );
 
     // Smaller font for descriptor
-    let desc_y = 10.0;
+    let desc_y = 9.0;
     let desc_width_estimate = descriptor.len() as f32 * 1.8; // Approx 1.8mm per char at size 8
     let desc_x = center_x - (desc_width_estimate / 2.0);
 
@@ -352,7 +368,7 @@ pub fn generate_label_pdf(data: &LabelData) -> Result<Vec<u8>, AppError> {
 
     // === Rush indicator (if applicable) ===
     if data.ticket.is_rush {
-        let rush_y = 4.0;
+        let rush_y = 3.5;
         let rush_text = "RUSH";
         let rush_width_estimate = rush_text.len() as f32 * 2.5;
         let rush_x = center_x - (rush_width_estimate / 2.0);

@@ -766,8 +766,16 @@ pub async fn get_label_pdf(
         .await?
         .ok_or_else(|| AppError::not_found("Ticket not found"))?;
 
-    // 2. Generate label PDF
-    let label_data = LabelData { ticket };
+    // 2. Find the customer
+    let customer = CustomerRepository::find_by_id(&state.db, ticket.customer_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Customer not found"))?;
+
+    // 3. Generate label PDF
+    let label_data = LabelData {
+        ticket,
+        customer_name: customer.name,
+    };
 
     let pdf_bytes = generate_label_pdf(&label_data)?;
 
