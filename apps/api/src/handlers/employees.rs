@@ -10,12 +10,14 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use uuid::Uuid;
 
+use chrono::{DateTime, Utc};
+
 use crate::auth::verify_pin;
 use crate::error::AppError;
 use crate::handlers::verify_admin_auth;
 use crate::middleware::extract_client_ip;
 use crate::models::employee::{CreateEmployee, EmployeeRole, EmployeeSummary, UpdateEmployee};
-use crate::repositories::EmployeeRepository;
+use crate::repositories::{EmployeeRepository, EmployeeSessionRepository};
 use crate::response::{created, ApiResponse};
 use crate::routes::AppState;
 
@@ -79,6 +81,9 @@ pub struct VerifyPinRequest {
 }
 
 /// Response for a successful PIN verification.
+///
+/// Includes a session token that should be used for subsequent requests
+/// via the X-Employee-Session header instead of X-Employee-ID.
 #[derive(Debug, Clone, Serialize)]
 pub struct VerifyPinResponse {
     /// The employee's unique identifier
@@ -87,12 +92,20 @@ pub struct VerifyPinResponse {
     pub name: String,
     /// The employee's role
     pub role: EmployeeRole,
+    /// Session token for subsequent requests (use in X-Employee-Session header)
+    pub session_token: String,
+    /// When the session expires (ISO 8601 format)
+    pub expires_at: DateTime<Utc>,
 }
 
-/// POST /api/v1/employees/verify - Verify an employee PIN.
+/// POST /api/v1/employees/verify - Verify an employee PIN and create a session.
 ///
 /// Accepts a PIN in the request body and returns the employee's
-/// ID, name, and role if the PIN is valid.
+/// ID, name, role, and a session token if the PIN is valid.
+///
+/// The session token should be used for subsequent requests via the
+/// X-Employee-Session header. This replaces the X-Employee-ID header
+/// which is deprecated due to security concerns (spoofing risk).
 ///
 /// Returns INVALID_PIN error if no active employee matches the PIN.
 /// Returns RATE_LIMITED error (429) if too many attempts from the same IP.
@@ -122,10 +135,16 @@ pub async fn verify_employee_pin(
             // Record success to reset backoff
             state.rate_limit.record_success(client_ip).await;
 
+            // Create a session for the employee
+            let session =
+                EmployeeSessionRepository::create(&state.db, employee.employee_id).await?;
+
             let response = VerifyPinResponse {
                 employee_id: employee.employee_id,
                 name: employee.name,
                 role: employee.role,
+                session_token: session.session_token,
+                expires_at: session.expires_at,
             };
             return Ok(Json(ApiResponse::success(response)));
         }
@@ -295,6 +314,48 @@ pub async fn delete_employee(
     Ok(Json(ApiResponse::success(response)))
 }
 
+// =============================================================================
+// POST /employees/logout - Employee Logout
+// =============================================================================
+
+/// Response for successful employee logout.
+#[derive(Debug, Clone, Serialize)]
+pub struct EmployeeLogoutResponse {
+    /// Whether the logout was successful
+    pub success: bool,
+}
+
+/// POST /api/v1/employees/logout - End the employee session.
+///
+/// Invalidates the current employee session token. After calling this endpoint,
+/// the session token can no longer be used for authentication.
+///
+/// # Request Headers
+/// - `X-Employee-Session`: The session token to invalidate
+///
+/// # Returns
+/// - Success: `{ "success": true }`
+///
+/// # Notes
+/// - Does not return an error if the session is already invalid/expired
+/// - If no session header is provided, returns success (idempotent)
+pub async fn employee_logout(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    // Get the session token if present
+    if let Some(token) = headers
+        .get("X-Employee-Session")
+        .and_then(|v| v.to_str().ok())
+    {
+        EmployeeSessionRepository::delete_by_token(&state.db, token).await?;
+    }
+
+    // Always return success (idempotent)
+    let response = EmployeeLogoutResponse { success: true };
+    Ok(Json(ApiResponse::success(response)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -326,12 +387,16 @@ mod tests {
             employee_id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
             name: "Alice".to_string(),
             role: EmployeeRole::Staff,
+            session_token: "test_token_abc123".to_string(),
+            expires_at: chrono::Utc::now() + chrono::Duration::hours(8),
         };
 
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("\"employee_id\":\"550e8400-e29b-41d4-a716-446655440000\""));
         assert!(json.contains("\"name\":\"Alice\""));
         assert!(json.contains("\"role\":\"staff\""));
+        assert!(json.contains("\"session_token\":\"test_token_abc123\""));
+        assert!(json.contains("\"expires_at\":"));
     }
 
     #[test]
@@ -340,10 +405,13 @@ mod tests {
             employee_id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
             name: "Admin User".to_string(),
             role: EmployeeRole::Admin,
+            session_token: "admin_session_token".to_string(),
+            expires_at: chrono::Utc::now() + chrono::Duration::hours(8),
         };
 
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("\"role\":\"admin\""));
+        assert!(json.contains("\"session_token\":"));
     }
 
     // Tests for CreateEmployee deserialization

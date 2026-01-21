@@ -21,8 +21,8 @@ use crate::models::{
     TicketSearchParams, TicketStatus, UpdateTicket,
 };
 use crate::repositories::{
-    CustomerRepository, EmployeeRepository, FieldHistoryRepository, StatusHistoryRepository,
-    TicketNoteRepository, TicketPhotoRepository, TicketRepository,
+    CustomerRepository, EmployeeRepository, EmployeeSessionRepository, FieldHistoryRepository,
+    StatusHistoryRepository, TicketNoteRepository, TicketPhotoRepository, TicketRepository,
 };
 use crate::response::ApiResponse;
 use crate::routes::AppState;
@@ -582,18 +582,52 @@ pub struct CreateTicketResponse {
     pub label_url: String,
 }
 
-/// Extract employee ID from X-Employee-ID header.
-fn extract_employee_id(headers: &HeaderMap) -> Result<Uuid, AppError> {
-    let header_value = headers
-        .get("X-Employee-ID")
-        .ok_or_else(|| AppError::validation("X-Employee-ID header is required"))?;
+/// Extract employee from session token (X-Employee-Session header).
+///
+/// This is the secure method that prevents employee impersonation.
+/// Falls back to X-Employee-ID header for backwards compatibility,
+/// but that method is deprecated and should be removed in a future version.
+async fn extract_employee_from_session(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<Employee, AppError> {
+    // Try session token first (preferred, secure)
+    if let Some(token) = headers
+        .get("X-Employee-Session")
+        .and_then(|v| v.to_str().ok())
+    {
+        let session = EmployeeSessionRepository::verify_and_touch(&state.db, token)
+            .await?
+            .ok_or_else(|| AppError::unauthorized("Invalid or expired session"))?;
 
-    let header_str = header_value
-        .to_str()
-        .map_err(|_| AppError::validation("Invalid X-Employee-ID header value"))?;
+        // Fetch the employee from the session
+        let employee = EmployeeRepository::find_active_by_id(&state.db, session.employee_id)
+            .await?
+            .ok_or_else(|| AppError::unauthorized("Employee not found or inactive"))?;
 
-    Uuid::parse_str(header_str)
-        .map_err(|_| AppError::validation("X-Employee-ID must be a valid UUID"))
+        return Ok(employee);
+    }
+
+    // Fall back to X-Employee-ID header (deprecated, for backwards compatibility)
+    if let Some(header_value) = headers.get("X-Employee-ID") {
+        let header_str = header_value
+            .to_str()
+            .map_err(|_| AppError::validation("Invalid X-Employee-ID header value"))?;
+
+        let employee_id = Uuid::parse_str(header_str)
+            .map_err(|_| AppError::validation("X-Employee-ID must be a valid UUID"))?;
+
+        // Verify employee exists and is active
+        let employee = EmployeeRepository::find_active_by_id(&state.db, employee_id)
+            .await?
+            .ok_or_else(|| AppError::validation("Employee not found or inactive"))?;
+
+        return Ok(employee);
+    }
+
+    Err(AppError::unauthorized(
+        "Missing authentication. Provide X-Employee-Session header.",
+    ))
 }
 
 /// Check if an employee is authorized to modify a ticket.
@@ -624,13 +658,8 @@ pub async fn create_ticket(
     headers: HeaderMap,
     Json(body): Json<CreateTicketRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // 1. Extract and validate employee ID from header
-    let employee_id = extract_employee_id(&headers)?;
-
-    // Verify employee exists and is active
-    let employee = EmployeeRepository::find_active_by_id(&state.db, employee_id)
-        .await?
-        .ok_or_else(|| AppError::validation("Employee not found or inactive"))?;
+    // 1. Extract and validate employee from session
+    let employee = extract_employee_from_session(&state, &headers).await?;
 
     // 2. Validate request - must have either customer_id OR customer, not both
     let customer_id = match (&body.customer_id, &body.customer) {
@@ -915,13 +944,8 @@ pub async fn update_ticket(
     Path(ticket_id): Path<Uuid>,
     Json(body): Json<UpdateTicketRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // 1. Extract and validate employee ID from header
-    let employee_id = extract_employee_id(&headers)?;
-
-    // Verify employee exists and is active
-    let employee = EmployeeRepository::find_active_by_id(&state.db, employee_id)
-        .await?
-        .ok_or_else(|| AppError::validation("Employee not found or inactive"))?;
+    // 1. Extract and validate employee from session
+    let employee = extract_employee_from_session(&state, &headers).await?;
 
     // 2. Find the ticket
     let existing_ticket = TicketRepository::find_by_id(&state.db, ticket_id)
@@ -1157,13 +1181,8 @@ pub async fn close_ticket(
     Path(ticket_id): Path<Uuid>,
     Json(body): Json<CloseTicketRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // 1. Extract and validate employee ID from header
-    let employee_id = extract_employee_id(&headers)?;
-
-    // Verify employee exists and is active
-    let employee = EmployeeRepository::find_active_by_id(&state.db, employee_id)
-        .await?
-        .ok_or_else(|| AppError::validation("Employee not found or inactive"))?;
+    // 1. Extract and validate employee from session
+    let employee = extract_employee_from_session(&state, &headers).await?;
 
     // 2. Authorization check: only admins can close tickets
     can_close_ticket(&employee)?;
@@ -1245,13 +1264,8 @@ pub async fn change_status(
     Path(ticket_id): Path<Uuid>,
     Json(body): Json<ChangeStatusRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // 1. Extract and validate employee ID from header
-    let employee_id = extract_employee_id(&headers)?;
-
-    // Verify employee exists and is active
-    let employee = EmployeeRepository::find_active_by_id(&state.db, employee_id)
-        .await?
-        .ok_or_else(|| AppError::validation("Employee not found or inactive"))?;
+    // 1. Extract and validate employee from session
+    let employee = extract_employee_from_session(&state, &headers).await?;
 
     // 2. Find the ticket
     let existing_ticket = TicketRepository::find_by_id(&state.db, ticket_id)
@@ -1330,13 +1344,8 @@ pub async fn toggle_rush(
     Path(ticket_id): Path<Uuid>,
     Json(body): Json<ToggleRushRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // 1. Extract and validate employee ID from header
-    let employee_id = extract_employee_id(&headers)?;
-
-    // Verify employee exists and is active
-    let employee = EmployeeRepository::find_active_by_id(&state.db, employee_id)
-        .await?
-        .ok_or_else(|| AppError::validation("Employee not found or inactive"))?;
+    // 1. Extract and validate employee from session
+    let employee = extract_employee_from_session(&state, &headers).await?;
 
     // 2. Find the ticket
     let existing_ticket = TicketRepository::find_by_id(&state.db, ticket_id)
@@ -1413,7 +1422,7 @@ pub struct AddNoteResponse {
 /// POST /api/v1/tickets/:ticket_id/notes - Add an internal note to a ticket.
 ///
 /// Notes are append-only - no edit or delete available.
-/// Requires X-Employee-ID header for attribution.
+/// Requires X-Employee-Session header for attribution.
 /// Any active employee (staff or admin) can add notes to any ticket.
 pub async fn add_note(
     State(state): State<AppState>,
@@ -1421,13 +1430,8 @@ pub async fn add_note(
     Path(ticket_id): Path<Uuid>,
     Json(body): Json<AddNoteRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // 1. Extract and validate employee ID from header
-    let employee_id = extract_employee_id(&headers)?;
-
-    // Verify employee exists and is active
-    let employee = EmployeeRepository::find_active_by_id(&state.db, employee_id)
-        .await?
-        .ok_or_else(|| AppError::validation("Employee not found or inactive"))?;
+    // 1. Extract and validate employee from session
+    let employee = extract_employee_from_session(&state, &headers).await?;
 
     // 2. Find the ticket (any active employee can add notes to any ticket)
     let _existing_ticket = TicketRepository::find_by_id(&state.db, ticket_id)
@@ -1483,7 +1487,7 @@ pub struct UploadPhotoResponse {
 ///
 /// Accepts multipart/form-data with a single file field named "photo".
 /// Validates file type (jpeg, png, webp) and size (max 10MB).
-/// Requires X-Employee-ID header for attribution.
+/// Requires X-Employee-Session header for attribution.
 /// Any active employee (staff or admin) can upload photos to any ticket.
 pub async fn upload_photo(
     State(state): State<AppState>,
@@ -1491,13 +1495,8 @@ pub async fn upload_photo(
     Path(ticket_id): Path<Uuid>,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, AppError> {
-    // 1. Extract and validate employee ID from header
-    let employee_id = extract_employee_id(&headers)?;
-
-    // Verify employee exists and is active
-    let employee = EmployeeRepository::find_active_by_id(&state.db, employee_id)
-        .await?
-        .ok_or_else(|| AppError::validation("Employee not found or inactive"))?;
+    // 1. Extract and validate employee from session
+    let employee = extract_employee_from_session(&state, &headers).await?;
 
     // 2. Find the ticket (any active employee can upload photos to any ticket)
     let ticket = TicketRepository::find_by_id(&state.db, ticket_id)

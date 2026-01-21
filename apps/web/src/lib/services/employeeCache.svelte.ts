@@ -10,7 +10,7 @@
  * - Only employees who have successfully verified online can work offline
  */
 
-import type { VerifyPinResponse } from '$lib/types/api';
+import type { VerifyPinResponse, EmployeeInfo } from '$lib/types/api';
 import { getStore, EMPLOYEE_CACHE_STORE } from './offlineDb';
 
 // =============================================================================
@@ -136,7 +136,7 @@ async function getAllCachedEmployees(): Promise<CachedEmployee[]> {
  * Verify PIN against cached credentials
  * Returns the employee data if verification succeeds, null otherwise
  */
-export async function verifyCachedPin(pin: string): Promise<VerifyPinResponse | null> {
+export async function verifyCachedPin(pin: string): Promise<EmployeeInfo | null> {
 	const pinHash = await hashPin(pin);
 	const cached = await getAllCachedEmployees();
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- not reactive state
@@ -268,7 +268,7 @@ function createEmployeeCacheStore() {
 	/**
 	 * Verify PIN offline
 	 */
-	async function verifyOffline(pin: string): Promise<VerifyPinResponse | null> {
+	async function verifyOffline(pin: string): Promise<EmployeeInfo | null> {
 		return verifyCachedPin(pin);
 	}
 

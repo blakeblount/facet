@@ -5,6 +5,7 @@
 pub mod admin_session;
 pub mod customer;
 pub mod employee;
+pub mod employee_session;
 pub mod field_history;
 pub mod status_history;
 pub mod storage_location;
@@ -18,6 +19,7 @@ pub use customer::{CreateCustomer, Customer};
 pub use employee::{
     CreateEmployee, Employee, EmployeeRole, EmployeeSummary, Permission, UpdateEmployee,
 };
+pub use employee_session::{CreateEmployeeSession, EmployeeSession, EmployeeSessionResponse};
 pub use field_history::{CreateFieldHistory, FieldHistoryEntry};
 pub use status_history::{CreateStatusHistory, StatusHistoryEntry};
 pub use storage_location::{

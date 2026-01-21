@@ -6,6 +6,7 @@
 pub mod admin_session;
 pub mod customer;
 pub mod employee;
+pub mod employee_session;
 pub mod field_history;
 pub mod status_history;
 pub mod storage_location;
@@ -17,6 +18,7 @@ pub mod ticket_photo;
 pub use admin_session::AdminSessionRepository;
 pub use customer::CustomerRepository;
 pub use employee::EmployeeRepository;
+pub use employee_session::EmployeeSessionRepository;
 pub use field_history::FieldHistoryRepository;
 pub use status_history::StatusHistoryRepository;
 pub use storage_location::StorageLocationRepository;

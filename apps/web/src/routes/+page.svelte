@@ -8,13 +8,8 @@
 	import EmployeeIdModal from '$lib/components/EmployeeIdModal.svelte';
 	import IntakeFormModal from '$lib/components/IntakeFormModal.svelte';
 	import TicketDetailModal from '$lib/components/TicketDetailModal.svelte';
-	import {
-		changeTicketStatus,
-		setCurrentEmployee,
-		type TicketStatus,
-		type QueueTicket,
-		type VerifyPinResponse
-	} from '$lib/services/api';
+	import { changeTicketStatus, setCurrentEmployee, type TicketStatus, type QueueTicket } from '$lib/services/api';
+	import type { VerifyPinResponse, EmployeeInfo } from '$lib/types/api';
 
 	let { data }: { data: PageData } = $props();
 
@@ -150,7 +145,7 @@
 		handleDragEnd();
 	}
 
-	async function handlePinSuccess(employee: VerifyPinResponse) {
+	async function handlePinSuccess(employee: VerifyPinResponse | EmployeeInfo) {
 		if (!pendingStatusChange) return;
 
 		const { ticketId, newStatus, sourceStatus } = pendingStatusChange;

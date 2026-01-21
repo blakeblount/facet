@@ -2,7 +2,8 @@
 	import Modal from './Modal.svelte';
 	import Input from './Input.svelte';
 	import Button from './Button.svelte';
-	import { verifyEmployeePin, ApiClientError, type VerifyPinResponse } from '$lib/services/api';
+	import { verifyEmployeePin, ApiClientError } from '$lib/services/api';
+	import type { VerifyPinResponse, EmployeeInfo } from '$lib/types/api';
 	import { employeeCacheStore } from '$lib/services/employeeCache.svelte';
 	import { offlineStore } from '$lib/stores/offline.svelte';
 
@@ -13,8 +14,12 @@
 		title?: string;
 		/** Callback when modal requests close */
 		onClose?: () => void;
-		/** Callback when PIN is successfully verified, returns the employee data */
-		onSuccess?: (employee: VerifyPinResponse) => void;
+		/**
+		 * Callback when PIN is successfully verified, returns the employee data.
+		 * For online verification, returns full VerifyPinResponse with session token.
+		 * For offline verification, returns basic EmployeeInfo without session token.
+		 */
+		onSuccess?: (employee: VerifyPinResponse | EmployeeInfo) => void;
 	}
 
 	let { open = false, title = 'Enter Employee PIN', onClose, onSuccess }: Props = $props();

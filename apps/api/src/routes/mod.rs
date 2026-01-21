@@ -133,7 +133,8 @@ pub fn api_router_with_limits(state: AppState, limits: BodyLimitConfig) -> Route
             "/:employee_id",
             put(handlers::update_employee).delete(handlers::delete_employee),
         )
-        .route("/verify", post(handlers::verify_employee_pin));
+        .route("/verify", post(handlers::verify_employee_pin))
+        .route("/logout", post(handlers::employee_logout));
 
     // Customer routes
     let customers_routes = Router::new()

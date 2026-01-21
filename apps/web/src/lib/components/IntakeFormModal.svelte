@@ -18,9 +18,9 @@
 		type StorageLocationSummary,
 		type CreateTicketRequest,
 		type InlineCustomer,
-		type Customer,
-		type VerifyPinResponse
+		type Customer
 	} from '$lib/services/api';
+	import type { VerifyPinResponse, EmployeeInfo } from '$lib/types/api';
 	import { offlineStore } from '$lib/stores/offline.svelte';
 	import { syncQueueStore } from '$lib/services/syncQueue.svelte';
 
@@ -314,7 +314,7 @@
 		showEmployeeModal = false;
 	}
 
-	async function handleEmployeeVerified(employee: VerifyPinResponse) {
+	async function handleEmployeeVerified(employee: VerifyPinResponse | EmployeeInfo) {
 		showEmployeeModal = false;
 		isSubmitting = true;
 		submissionError = '';

@@ -15,9 +15,9 @@
 		verifyEmployeePin,
 		type TicketDetailResponse,
 		type TicketStatus,
-		type TicketPhoto,
-		type VerifyPinResponse
+		type TicketPhoto
 	} from '$lib/services/api';
+	import type { VerifyPinResponse, EmployeeInfo } from '$lib/types/api';
 	import { uploadTicketPhoto } from '$lib/services/api';
 
 	interface Props {
@@ -224,7 +224,7 @@
 		showUploadEmployeeModal = true;
 	}
 
-	async function handleUploadEmployeeSuccess(employee: VerifyPinResponse) {
+	async function handleUploadEmployeeSuccess(employee: VerifyPinResponse | EmployeeInfo) {
 		if (!ticket || uploadFiles.length === 0) return;
 		showUploadEmployeeModal = false;
 
@@ -368,7 +368,7 @@
 		showRushEmployeeModal = true;
 	}
 
-	async function handleRushEmployeeSuccess(employee: VerifyPinResponse) {
+	async function handleRushEmployeeSuccess(employee: VerifyPinResponse | EmployeeInfo) {
 		if (!ticket) return;
 		showRushEmployeeModal = false;
 		isTogglingRush = true;
@@ -397,7 +397,7 @@
 		showNoteEmployeeModal = true;
 	}
 
-	async function handleNoteEmployeeSuccess(employee: VerifyPinResponse) {
+	async function handleNoteEmployeeSuccess(employee: VerifyPinResponse | EmployeeInfo) {
 		if (!ticket || !newNoteContent.trim()) return;
 		showNoteEmployeeModal = false;
 		isAddingNote = true;

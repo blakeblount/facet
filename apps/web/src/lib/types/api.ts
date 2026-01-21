@@ -385,12 +385,25 @@ export interface EmployeeSummary {
 }
 
 /**
- * Response from PIN verification.
+ * Basic employee info returned from verification.
+ * Used for offline verification where a session token is not available.
  */
-export interface VerifyPinResponse {
+export interface EmployeeInfo {
 	employee_id: string;
 	name: string;
 	role: EmployeeRole;
+}
+
+/**
+ * Response from online PIN verification.
+ * Includes a session token that should be used for subsequent requests
+ * via the X-Employee-Session header.
+ */
+export interface VerifyPinResponse extends EmployeeInfo {
+	/** Session token for subsequent requests (use in X-Employee-Session header) */
+	session_token: string;
+	/** When the session expires (ISO 8601 format) */
+	expires_at: string;
 }
 
 /**

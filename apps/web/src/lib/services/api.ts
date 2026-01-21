@@ -74,7 +74,7 @@ export function getApiConfig(): ApiConfig {
 }
 
 // =============================================================================
-// Employee Context
+// Employee Session Context
 // =============================================================================
 
 /**
@@ -84,11 +84,36 @@ export function getApiConfig(): ApiConfig {
 let currentEmployeeId: string | null = null;
 
 /**
- * Set the current employee ID for API requests.
- * This will be sent as the X-Employee-ID header on all requests.
+ * The current employee session token.
+ * Set after successful employee PIN verification.
+ */
+let employeeSessionToken: string | null = null;
+
+/**
+ * Expiration timestamp for the current employee session.
+ */
+let employeeSessionExpiresAt: Date | null = null;
+
+/**
+ * Set the employee session and ID.
+ * Called internally after successful employee PIN verification.
+ */
+function setEmployeeSession(employeeId: string, token: string, expiresAt: string): void {
+	currentEmployeeId = employeeId;
+	employeeSessionToken = token;
+	employeeSessionExpiresAt = new Date(expiresAt);
+}
+
+/**
+ * Set the current employee ID for API requests (deprecated).
+ * @deprecated Use setEmployeeSession instead. This is kept for backward compatibility.
  */
 export function setCurrentEmployee(employeeId: string | null): void {
 	currentEmployeeId = employeeId;
+	if (employeeId === null) {
+		employeeSessionToken = null;
+		employeeSessionExpiresAt = null;
+	}
 }
 
 /**
@@ -99,10 +124,52 @@ export function getCurrentEmployee(): string | null {
 }
 
 /**
+ * Check if there's an active employee session.
+ */
+export function hasEmployeeSession(): boolean {
+	if (!employeeSessionToken || !employeeSessionExpiresAt) {
+		// Fall back to legacy check
+		return currentEmployeeId !== null;
+	}
+	// Check if session has expired
+	if (new Date() > employeeSessionExpiresAt) {
+		clearEmployeeSession();
+		return false;
+	}
+	return true;
+}
+
+/**
  * Check if an employee is currently set.
+ * @deprecated Use hasEmployeeSession instead.
  */
 export function hasCurrentEmployee(): boolean {
-	return currentEmployeeId !== null;
+	return hasEmployeeSession();
+}
+
+/**
+ * Get the current employee session token.
+ * Returns null if no session or session has expired.
+ */
+export function getEmployeeSessionToken(): string | null {
+	if (!employeeSessionToken || !employeeSessionExpiresAt) {
+		return null;
+	}
+	if (new Date() > employeeSessionExpiresAt) {
+		clearEmployeeSession();
+		return null;
+	}
+	return employeeSessionToken;
+}
+
+/**
+ * Clear the employee session.
+ * Call this after logout or when the session expires.
+ */
+export function clearEmployeeSession(): void {
+	currentEmployeeId = null;
+	employeeSessionToken = null;
+	employeeSessionExpiresAt = null;
 }
 
 // =============================================================================
@@ -223,7 +290,11 @@ function buildHeaders(useAdminSession?: boolean): HeadersInit {
 		'Content-Type': 'application/json'
 	};
 
-	if (currentEmployeeId) {
+	// Use session token if available (preferred), fall back to employee ID (deprecated)
+	if (employeeSessionToken) {
+		headers['X-Employee-Session'] = employeeSessionToken;
+	} else if (currentEmployeeId) {
+		// Deprecated: X-Employee-ID header for backward compatibility
 		headers['X-Employee-ID'] = currentEmployeeId;
 	}
 
@@ -622,12 +693,34 @@ export async function deleteEmployee(employeeId: string): Promise<DeleteEmployee
 }
 
 /**
- * Verify employee PIN and get employee info.
- * Returns employee_id, name, and role if the PIN is valid.
+ * Verify employee PIN and create an employee session.
+ * On success, stores the session token for subsequent employee requests.
+ * Returns employee_id, name, role, session_token, and expires_at if the PIN is valid.
  * Throws ApiClientError with code 'INVALID_PIN' if the PIN is invalid.
  */
 export async function verifyEmployeePin(pin: string): Promise<VerifyPinResponse> {
-	return post<VerifyPinResponse>('/employees/verify', { pin });
+	const response = await post<VerifyPinResponse>('/employees/verify', { pin });
+	// Store the session token for subsequent requests
+	if (response.session_token) {
+		setEmployeeSession(response.employee_id, response.session_token, response.expires_at);
+	}
+	return response;
+}
+
+/**
+ * Log out the current employee session.
+ * Invalidates the session on the server and clears local session state.
+ */
+export async function employeeLogout(): Promise<void> {
+	if (employeeSessionToken) {
+		try {
+			// Tell the server to invalidate the session
+			await post<{ success: boolean }>('/employees/logout', undefined, false);
+		} catch {
+			// Ignore errors - we'll clear the local session anyway
+		}
+	}
+	clearEmployeeSession();
 }
 
 /**
@@ -823,8 +916,11 @@ export async function uploadTicketPhoto(
 
 		xhr.open('POST', url);
 
-		// Add headers
-		if (currentEmployeeId) {
+		// Add headers - use session token if available (preferred), fall back to employee ID (deprecated)
+		if (employeeSessionToken) {
+			xhr.setRequestHeader('X-Employee-Session', employeeSessionToken);
+		} else if (currentEmployeeId) {
+			// Deprecated: X-Employee-ID header for backward compatibility
 			xhr.setRequestHeader('X-Employee-ID', currentEmployeeId);
 		}
 
@@ -856,6 +952,7 @@ export type {
 	Customer,
 	CreateCustomerRequest,
 	EmployeeSummary,
+	EmployeeInfo,
 	VerifyPinResponse,
 	StorageLocation,
 	StorageLocationSummary,
