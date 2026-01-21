@@ -650,6 +650,7 @@
 					label="Quote Amount"
 					type="number"
 					placeholder="0.00"
+					prefix="$"
 					bind:value={quoteAmount}
 					error={errors.quoteAmount}
 					disabled={isSubmitting}

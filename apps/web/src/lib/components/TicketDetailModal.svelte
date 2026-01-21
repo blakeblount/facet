@@ -704,6 +704,7 @@
 								label="Quote Amount"
 								type="number"
 								placeholder="0.00"
+								prefix="$"
 								bind:value={editFormData.quote_amount}
 								disabled={isSavingEdit}
 							/>
@@ -713,6 +714,7 @@
 								label="Actual Charged"
 								type="number"
 								placeholder="0.00"
+								prefix="$"
 								bind:value={editFormData.actual_amount}
 								disabled={isSavingEdit}
 							/>
@@ -981,6 +983,7 @@
 					label="Actual Amount"
 					type="number"
 					placeholder="0.00"
+					prefix="$"
 					bind:value={actualAmount}
 					error={closeError ?? undefined}
 					required

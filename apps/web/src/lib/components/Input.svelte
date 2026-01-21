@@ -22,6 +22,8 @@
 		id?: string;
 		/** Callback when input loses focus */
 		onblur?: () => void;
+		/** Prefix text to display before the input (e.g., "$" for currency) */
+		prefix?: string;
 	}
 
 	let {
@@ -35,7 +37,8 @@
 		name,
 		class: className = '',
 		id,
-		onblur
+		onblur,
+		prefix
 	}: Props = $props();
 
 	// Generate a stable unique ID if not provided (only once per component instance)
@@ -54,19 +57,38 @@
 		</label>
 	{/if}
 
-	<input
-		{type}
-		{name}
-		id={inputId}
-		class="input-field"
-		{placeholder}
-		{disabled}
-		{required}
-		bind:value
-		aria-invalid={error ? 'true' : undefined}
-		aria-describedby={error ? errorId : undefined}
-		{onblur}
-	/>
+	{#if prefix}
+		<div class="input-with-prefix">
+			<span class="input-prefix" aria-hidden="true">{prefix}</span>
+			<input
+				{type}
+				{name}
+				id={inputId}
+				class="input-field has-prefix"
+				{placeholder}
+				{disabled}
+				{required}
+				bind:value
+				aria-invalid={error ? 'true' : undefined}
+				aria-describedby={error ? errorId : undefined}
+				{onblur}
+			/>
+		</div>
+	{:else}
+		<input
+			{type}
+			{name}
+			id={inputId}
+			class="input-field"
+			{placeholder}
+			{disabled}
+			{required}
+			bind:value
+			aria-invalid={error ? 'true' : undefined}
+			aria-describedby={error ? errorId : undefined}
+			{onblur}
+		/>
+	{/if}
 
 	{#if error}
 		<p id={errorId} class="input-error" role="alert">
@@ -105,6 +127,48 @@
 		transition:
 			border-color var(--transition-fast, 150ms ease),
 			box-shadow var(--transition-fast, 150ms ease);
+	}
+
+	/* Prefix styles */
+	.input-with-prefix {
+		display: flex;
+		align-items: stretch;
+	}
+
+	.input-prefix {
+		display: flex;
+		align-items: center;
+		padding: var(--space-sm, 0.5rem) var(--space-sm, 0.5rem);
+		padding-right: 0;
+		font-size: 0.875rem;
+		color: var(--color-text-muted, #64748b);
+		background-color: var(--color-surface, #ffffff);
+		border: 1px solid var(--color-border, #e2e8f0);
+		border-right: none;
+		border-radius: var(--radius-md, 0.5rem) 0 0 var(--radius-md, 0.5rem);
+	}
+
+	.input-field.has-prefix {
+		border-top-left-radius: 0;
+		border-bottom-left-radius: 0;
+	}
+
+	.input-with-prefix:focus-within .input-prefix {
+		border-color: var(--color-primary, #1e40af);
+	}
+
+	.input-with-prefix:hover:not(:has(:disabled)) .input-prefix {
+		border-color: var(--color-primary-light, #3b82f6);
+	}
+
+	.has-error .input-prefix {
+		border-color: var(--color-rush, #ef4444);
+	}
+
+	.is-disabled .input-prefix {
+		background-color: var(--color-bg, #f8fafc);
+		color: var(--color-text-muted, #64748b);
+		opacity: 0.7;
 	}
 
 	.input-field::placeholder {
