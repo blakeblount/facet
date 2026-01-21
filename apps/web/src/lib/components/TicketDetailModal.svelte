@@ -33,9 +33,19 @@
 		onEdit?: () => void;
 		/** Callback when ticket is closed successfully */
 		onTicketClosed?: () => void;
+		/** Callback when ticket is updated (e.g., rush status changed) */
+		onTicketUpdated?: () => void;
 	}
 
-	let { ticketId, open, onClose, isEditing = false, onEdit, onTicketClosed }: Props = $props();
+	let {
+		ticketId,
+		open,
+		onClose,
+		isEditing = false,
+		onEdit,
+		onTicketClosed,
+		onTicketUpdated
+	}: Props = $props();
 
 	let ticket: TicketDetailResponse | null = $state(null);
 	let loading: boolean = $state(false);
@@ -379,6 +389,8 @@
 			await toggleRush(ticket.ticket_id, pendingRushValue);
 			// Refresh ticket to show updated data
 			await fetchTicket(ticket.ticket_id);
+			// Notify parent that ticket was updated so queue view can refresh
+			onTicketUpdated?.();
 		} catch (e) {
 			rushError = e instanceof Error ? e.message : 'Failed to update rush status';
 		} finally {

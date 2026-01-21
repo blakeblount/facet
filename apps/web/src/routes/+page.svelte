@@ -8,7 +8,12 @@
 	import EmployeeIdModal from '$lib/components/EmployeeIdModal.svelte';
 	import IntakeFormModal from '$lib/components/IntakeFormModal.svelte';
 	import TicketDetailModal from '$lib/components/TicketDetailModal.svelte';
-	import { changeTicketStatus, setCurrentEmployee, type TicketStatus, type QueueTicket } from '$lib/services/api';
+	import {
+		changeTicketStatus,
+		setCurrentEmployee,
+		type TicketStatus,
+		type QueueTicket
+	} from '$lib/services/api';
 	import type { VerifyPinResponse, EmployeeInfo } from '$lib/types/api';
 
 	let { data }: { data: PageData } = $props();
@@ -198,6 +203,11 @@
 		await invalidateAll();
 	}
 
+	async function handleTicketUpdated() {
+		// Refresh the workboard to reflect ticket changes (e.g., rush status)
+		await invalidateAll();
+	}
+
 	// Helper to determine if lane is a valid drop target
 	function isValidDropTarget(status: TicketStatus): boolean {
 		return draggingTicketId !== null && findTicketStatus(draggingTicketId) !== status;
@@ -348,6 +358,7 @@
 	open={showTicketDetailModal}
 	onClose={closeTicketModal}
 	onTicketClosed={handleTicketClosed}
+	onTicketUpdated={handleTicketUpdated}
 />
 
 <style>

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import { invalidateAll } from '$app/navigation';
 	import TicketDetailModal from '$lib/components/TicketDetailModal.svelte';
 	import Select from '$lib/components/Select.svelte';
 	import DatePicker from '$lib/components/DatePicker.svelte';
@@ -42,6 +43,11 @@
 		statusFilter = '';
 		fromDate = '';
 		toDate = '';
+	}
+
+	async function handleTicketUpdated() {
+		// Refresh search results to reflect ticket changes (e.g., rush status)
+		await invalidateAll();
 	}
 </script>
 
@@ -154,7 +160,12 @@
 	{/if}
 </div>
 
-<TicketDetailModal ticketId={selectedTicketId} open={isModalOpen} onClose={closeModal} />
+<TicketDetailModal
+	ticketId={selectedTicketId}
+	open={isModalOpen}
+	onClose={closeModal}
+	onTicketUpdated={handleTicketUpdated}
+/>
 
 <style>
 	.search-page {
