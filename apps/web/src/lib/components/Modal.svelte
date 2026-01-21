@@ -136,12 +136,15 @@
 	/* Use native dialog for built-in accessibility (focus trap, backdrop) */
 	.modal-dialog {
 		position: fixed;
+		inset: 0;
+		margin: auto;
 		padding: 0;
 		border: none;
 		background: transparent;
 		max-width: 90vw;
 		max-height: 90vh;
 		width: fit-content;
+		height: fit-content;
 		overflow: visible;
 	}
 
