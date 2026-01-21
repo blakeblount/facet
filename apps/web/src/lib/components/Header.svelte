@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { page } from '$app/stores';
 	import OfflineIndicator from './OfflineIndicator.svelte';
 
 	interface Props {
@@ -9,6 +10,13 @@
 	let { storeName = 'Facet' }: Props = $props();
 
 	let searchQuery = $state('');
+
+	// Determine active state for navigation links
+	let isWorkboardActive = $derived(
+		$page.url.pathname === '/' || $page.url.pathname.startsWith('/tickets')
+	);
+	let isSearchActive = $derived($page.url.pathname.startsWith('/search'));
+	let isAdminActive = $derived($page.url.pathname.startsWith('/admin'));
 </script>
 
 <header class="app-header">
@@ -50,10 +58,15 @@
 		<div class="header-right">
 			<OfflineIndicator />
 			<nav class="nav-links">
-				<a href={resolve('/')} class="nav-link">Workboard</a>
-				<a href={resolve('/search')} class="nav-link">Search</a>
+				<a href={resolve('/')} class="nav-link" class:active={isWorkboardActive}>Workboard</a>
+				<a href={resolve('/search')} class="nav-link" class:active={isSearchActive}>Search</a>
 			</nav>
-			<a href={resolve('/admin')} class="settings-link" title="Settings">
+			<a
+				href={resolve('/admin')}
+				class="settings-link"
+				class:active={isAdminActive}
+				title="Settings"
+			>
 				<svg
 					class="settings-icon"
 					xmlns="http://www.w3.org/2000/svg"
@@ -191,6 +204,13 @@
 		text-decoration: none;
 	}
 
+	.nav-link.active {
+		background-color: rgba(255, 255, 255, 0.15);
+		color: white;
+		border-bottom: 2px solid white;
+		padding-bottom: calc(var(--space-sm, 0.5rem) - 2px);
+	}
+
 	.settings-link {
 		display: flex;
 		align-items: center;
@@ -204,6 +224,13 @@
 	.settings-link:hover {
 		background-color: rgba(255, 255, 255, 0.1);
 		text-decoration: none;
+	}
+
+	.settings-link.active {
+		background-color: rgba(255, 255, 255, 0.15);
+		color: white;
+		border-bottom: 2px solid white;
+		padding-bottom: calc(var(--space-sm, 0.5rem) - 2px);
 	}
 
 	.settings-icon {
