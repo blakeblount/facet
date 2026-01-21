@@ -135,17 +135,19 @@
 						>
 							<div class="result-header">
 								<span class="ticket-code">{ticket.friendly_code}</span>
-								<span class="ticket-status status-{ticket.status.replace(/_/g, '-')}">
-									{ticket.status.replace(/_/g, ' ')}
-								</span>
+								<div class="result-badges">
+									{#if ticket.is_rush}
+										<span class="rush-badge">RUSH</span>
+									{/if}
+									<span class="ticket-status status-{ticket.status.replace(/_/g, '-')}">
+										{ticket.status.replace(/_/g, ' ')}
+									</span>
+								</div>
 							</div>
 							<div class="result-body">
 								<div class="ticket-customer">{ticket.customer_name}</div>
 								<div class="ticket-description">{ticket.item_description}</div>
 							</div>
-							{#if ticket.is_rush}
-								<span class="rush-badge">RUSH</span>
-							{/if}
 						</button>
 					{/each}
 				</div>
@@ -351,10 +353,13 @@
 		color: var(--color-text-muted);
 	}
 
+	.result-badges {
+		display: flex;
+		gap: var(--space-xs);
+		flex-shrink: 0;
+	}
+
 	.rush-badge {
-		position: absolute;
-		top: var(--space-sm);
-		right: var(--space-sm);
 		padding: var(--space-xs) var(--space-sm);
 		background-color: var(--color-rush);
 		color: white;
