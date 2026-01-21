@@ -64,49 +64,54 @@
 <style>
 	.pwa-toast {
 		position: fixed;
-		right: 1rem;
-		bottom: 1rem;
-		margin: 1rem;
-		padding: 1rem;
-		border: 1px solid #8885;
-		border-radius: 0.5rem;
-		background-color: white;
-		box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+		right: var(--space-lg, 1.5rem);
+		bottom: var(--space-lg, 1.5rem);
+		margin: var(--space-md, 1rem);
+		padding: var(--space-md, 1rem);
+		border: 1px solid var(--color-border, #e2e8f0);
+		border-radius: var(--radius-md, 0.5rem);
+		background-color: var(--color-surface, #ffffff);
+		box-shadow:
+			0 4px 6px -1px rgba(0, 0, 0, 0.1),
+			0 2px 4px -1px rgba(0, 0, 0, 0.06);
 		z-index: 9999;
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: var(--space-sm, 0.5rem);
 	}
 
 	.message {
 		font-size: 0.875rem;
+		color: var(--color-text, #1e293b);
 	}
 
 	.buttons {
 		display: flex;
-		gap: 0.5rem;
+		gap: var(--space-sm, 0.5rem);
 	}
 
 	button {
-		padding: 0.5rem 1rem;
+		padding: var(--space-sm, 0.5rem) var(--space-md, 1rem);
 		font-size: 0.875rem;
-		border-radius: 0.25rem;
-		border: 1px solid #d1d5db;
-		background-color: #f9fafb;
+		border-radius: var(--radius-sm, 0.25rem);
+		border: 1px solid var(--color-border, #e2e8f0);
+		background-color: var(--color-bg, #f8fafc);
+		color: var(--color-text, #1e293b);
 		cursor: pointer;
+		transition: background-color var(--transition-fast, 150ms ease);
 	}
 
 	button:hover {
-		background-color: #e5e7eb;
+		background-color: var(--color-border, #e2e8f0);
 	}
 
 	button:first-child {
-		background-color: #1e40af;
+		background-color: var(--color-primary, #1e40af);
 		color: white;
-		border-color: #1e40af;
+		border-color: var(--color-primary, #1e40af);
 	}
 
 	button:first-child:hover {
-		background-color: #1e3a8a;
+		background-color: var(--color-primary-dark, #1e3a8a);
 	}
 </style>
