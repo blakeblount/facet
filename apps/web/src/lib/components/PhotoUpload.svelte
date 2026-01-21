@@ -43,6 +43,27 @@
 	let fileInput: HTMLInputElement;
 	let validationError = $state<string | null>(null);
 
+	// Track whether we're in the middle of our own sync to avoid loops
+	let isSyncing = false;
+
+	// Watch for external resets of the files prop (e.g., when parent form is reset)
+	$effect(() => {
+		// When files array is empty but we have photoFiles, this means the parent reset
+		// We need to clear our internal state and revoke object URLs
+		if (files.length === 0 && photoFiles.length > 0 && !isSyncing) {
+			// Clean up preview URLs to prevent memory leaks
+			for (const photo of photoFiles) {
+				// Note: We're using data URLs from FileReader, not object URLs,
+				// but if we switch to object URLs in the future, this is safe
+				if (photo.preview.startsWith('blob:')) {
+					URL.revokeObjectURL(photo.preview);
+				}
+			}
+			photoFiles = [];
+			validationError = null;
+		}
+	});
+
 	const displayError = $derived(error || validationError);
 	const canAddMore = $derived(photoFiles.length < maxFiles);
 
@@ -133,7 +154,12 @@
 	}
 
 	function syncFiles(): void {
+		isSyncing = true;
 		files = photoFiles.map((p) => p.file);
+		// Reset flag after a microtask to ensure the effect doesn't fire
+		queueMicrotask(() => {
+			isSyncing = false;
+		});
 	}
 
 	function handleDragEnter(e: DragEvent): void {
