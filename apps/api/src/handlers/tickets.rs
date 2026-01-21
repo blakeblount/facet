@@ -15,8 +15,9 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::models::{
     CreateCustomer, CreateFieldHistory, CreateStatusHistory, CreateTicket, CreateTicketNote,
-    CreateTicketPhoto, Customer, QueueTicket, Ticket, TicketFilters, TicketNote as TicketNoteModel,
-    TicketPhoto as TicketPhotoModel, TicketSearchParams, TicketStatus, UpdateTicket,
+    CreateTicketPhoto, Customer, Employee, EmployeeRole, QueueTicket, Ticket, TicketFilters,
+    TicketNote as TicketNoteModel, TicketPhoto as TicketPhotoModel, TicketSearchParams,
+    TicketStatus, UpdateTicket,
 };
 use crate::repositories::{
     CustomerRepository, EmployeeRepository, FieldHistoryRepository, StatusHistoryRepository,
@@ -593,6 +594,28 @@ fn extract_employee_id(headers: &HeaderMap) -> Result<Uuid, AppError> {
         .map_err(|_| AppError::validation("X-Employee-ID must be a valid UUID"))
 }
 
+/// Check if an employee is authorized to modify a ticket.
+///
+/// An employee can modify a ticket if:
+/// - They have the Admin role, OR
+/// - They took in the ticket (taken_in_by matches), OR
+/// - They are assigned to work on the ticket (worked_by matches)
+///
+/// Returns an error if not authorized. The error message intentionally
+/// does not reveal whether the ticket exists to prevent enumeration.
+pub fn is_authorized_for_ticket(employee: &Employee, ticket: &Ticket) -> bool {
+    employee.role == EmployeeRole::Admin
+        || ticket.taken_in_by == employee.employee_id
+        || ticket.worked_by == Some(employee.employee_id)
+}
+
+/// Returns an authorization error for ticket operations.
+///
+/// Uses a generic message to avoid leaking information about ticket existence.
+fn forbidden_ticket_error() -> AppError {
+    AppError::forbidden("You do not have permission to modify this ticket")
+}
+
 /// POST /api/v1/tickets - Create a new ticket.
 pub async fn create_ticket(
     State(state): State<AppState>,
@@ -898,9 +921,14 @@ pub async fn update_ticket(
     // 2. Find the ticket
     let existing_ticket = TicketRepository::find_by_id(&state.db, ticket_id)
         .await?
-        .ok_or_else(|| AppError::not_found("Ticket not found"))?;
+        .ok_or_else(forbidden_ticket_error)?;
 
-    // 3. Check if ticket is closed/archived
+    // 3. Authorization check: employee must be owner, assigned worker, or admin
+    if !is_authorized_for_ticket(&employee, &existing_ticket) {
+        return Err(forbidden_ticket_error());
+    }
+
+    // 4. Check if ticket is closed/archived
     if !existing_ticket.status.is_open() {
         // Check for admin override via X-Admin-PIN header
         let has_admin_override = if let Some(pin_header) = headers.get("X-Admin-PIN") {
@@ -920,7 +948,7 @@ pub async fn update_ticket(
         }
     }
 
-    // 4. Track field changes for audit trail
+    // 5. Track field changes for audit trail
     let mut field_changes: Vec<CreateFieldHistory> = Vec::new();
 
     // Helper to record a field change
@@ -1005,7 +1033,7 @@ pub async fn update_ticket(
         body.worked_by_employee_id
     );
 
-    // 5. Build update struct
+    // 6. Build update struct
     let update = UpdateTicket {
         item_type: body.item_type,
         item_description: body.item_description,
@@ -1020,13 +1048,13 @@ pub async fn update_ticket(
         last_modified_by: Some(employee.employee_id),
     };
 
-    // 6. Update the ticket
+    // 7. Update the ticket
     let updated_ticket = TicketRepository::update(&state.db, ticket_id, update).await?;
 
-    // 7. Record field changes in history
+    // 8. Record field changes in history
     FieldHistoryRepository::create_batch(&state.db, field_changes).await?;
 
-    // 8. Return updated ticket
+    // 9. Return updated ticket
     Ok(Json(ApiResponse::success(updated_ticket)))
 }
 
@@ -1136,11 +1164,16 @@ pub async fn close_ticket(
     // 2. Find the ticket
     let existing_ticket = TicketRepository::find_by_id(&state.db, ticket_id)
         .await?
-        .ok_or_else(|| AppError::not_found("Ticket not found"))?;
+        .ok_or_else(forbidden_ticket_error)?;
+
+    // 3. Authorization check: employee must be owner, assigned worker, or admin
+    if !is_authorized_for_ticket(&employee, &existing_ticket) {
+        return Err(forbidden_ticket_error());
+    }
 
     let previous_status = existing_ticket.status;
 
-    // 3. Validate ticket is in ReadyForPickup status
+    // 4. Validate ticket is in ReadyForPickup status
     if previous_status != TicketStatus::ReadyForPickup {
         return Err(AppError::validation(format!(
             "Only tickets with status 'ready_for_pickup' can be closed, current status is '{}'",
@@ -1148,7 +1181,7 @@ pub async fn close_ticket(
         )));
     }
 
-    // 4. Close the ticket
+    // 5. Close the ticket
     let closed_ticket = TicketRepository::close(
         &state.db,
         ticket_id,
@@ -1157,7 +1190,7 @@ pub async fn close_ticket(
     )
     .await?;
 
-    // 5. Create status history entry
+    // 6. Create status history entry
     StatusHistoryRepository::create(
         &state.db,
         CreateStatusHistory {
@@ -1169,7 +1202,7 @@ pub async fn close_ticket(
     )
     .await?;
 
-    // 6. Return closed ticket with previous status
+    // 7. Return closed ticket with previous status
     let response = CloseTicketResponse {
         ticket: closed_ticket,
         previous_status,
@@ -1220,11 +1253,16 @@ pub async fn change_status(
     // 2. Find the ticket
     let existing_ticket = TicketRepository::find_by_id(&state.db, ticket_id)
         .await?
-        .ok_or_else(|| AppError::not_found("Ticket not found"))?;
+        .ok_or_else(forbidden_ticket_error)?;
+
+    // 3. Authorization check: employee must be owner, assigned worker, or admin
+    if !is_authorized_for_ticket(&employee, &existing_ticket) {
+        return Err(forbidden_ticket_error());
+    }
 
     let previous_status = existing_ticket.status;
 
-    // 3. Validate the status transition
+    // 4. Validate the status transition
     if !previous_status.can_transition_to(body.status) {
         return Err(AppError::validation(format!(
             "Cannot transition from {} to {}",
@@ -1233,12 +1271,12 @@ pub async fn change_status(
         )));
     }
 
-    // 4. Update the ticket status
+    // 5. Update the ticket status
     let updated_ticket =
         TicketRepository::update_status(&state.db, ticket_id, body.status, employee.employee_id)
             .await?;
 
-    // 5. Create status history entry
+    // 6. Create status history entry
     StatusHistoryRepository::create(
         &state.db,
         CreateStatusHistory {
@@ -1250,7 +1288,7 @@ pub async fn change_status(
     )
     .await?;
 
-    // 6. Return updated ticket with previous status
+    // 7. Return updated ticket with previous status
     let response = ChangeStatusResponse {
         ticket: updated_ticket,
         previous_status,
@@ -1301,18 +1339,23 @@ pub async fn toggle_rush(
     // 2. Find the ticket
     let existing_ticket = TicketRepository::find_by_id(&state.db, ticket_id)
         .await?
-        .ok_or_else(|| AppError::not_found("Ticket not found"))?;
+        .ok_or_else(forbidden_ticket_error)?;
+
+    // 3. Authorization check: employee must be owner, assigned worker, or admin
+    if !is_authorized_for_ticket(&employee, &existing_ticket) {
+        return Err(forbidden_ticket_error());
+    }
 
     let previous_is_rush = existing_ticket.is_rush;
 
-    // 3. Check if ticket is closed/archived
+    // 4. Check if ticket is closed/archived
     if !existing_ticket.status.is_open() {
         return Err(AppError::forbidden(
             "Cannot modify rush flag on closed or archived ticket",
         ));
     }
 
-    // 4. Skip update if value is the same
+    // 5. Skip update if value is the same
     if previous_is_rush == body.is_rush {
         let response = ToggleRushResponse {
             ticket: existing_ticket,
@@ -1321,12 +1364,12 @@ pub async fn toggle_rush(
         return Ok(Json(ApiResponse::success(response)));
     }
 
-    // 5. Update the rush flag
+    // 6. Update the rush flag
     let updated_ticket =
         TicketRepository::set_rush(&state.db, ticket_id, body.is_rush, employee.employee_id)
             .await?;
 
-    // 6. Record field change in history
+    // 7. Record field change in history
     FieldHistoryRepository::create(
         &state.db,
         CreateFieldHistory {
@@ -1339,7 +1382,7 @@ pub async fn toggle_rush(
     )
     .await?;
 
-    // 7. Return updated ticket with previous status
+    // 8. Return updated ticket with previous status
     let response = ToggleRushResponse {
         ticket: updated_ticket,
         previous_is_rush,
@@ -1385,17 +1428,22 @@ pub async fn add_note(
         .await?
         .ok_or_else(|| AppError::validation("Employee not found or inactive"))?;
 
-    // 2. Verify ticket exists
-    let _ticket = TicketRepository::find_by_id(&state.db, ticket_id)
+    // 2. Find the ticket
+    let existing_ticket = TicketRepository::find_by_id(&state.db, ticket_id)
         .await?
-        .ok_or_else(|| AppError::not_found("Ticket not found"))?;
+        .ok_or_else(forbidden_ticket_error)?;
 
-    // 3. Validate content is not empty
+    // 3. Authorization check: employee must be owner, assigned worker, or admin
+    if !is_authorized_for_ticket(&employee, &existing_ticket) {
+        return Err(forbidden_ticket_error());
+    }
+
+    // 4. Validate content is not empty
     if body.content.trim().is_empty() {
         return Err(AppError::validation("Note content cannot be empty"));
     }
 
-    // 4. Create the note
+    // 5. Create the note
     let note = TicketNoteRepository::create(
         &state.db,
         CreateTicketNote {
@@ -1406,7 +1454,7 @@ pub async fn add_note(
     )
     .await?;
 
-    // 5. Return created note
+    // 6. Return created note
     let response = AddNoteResponse { note };
 
     Ok((StatusCode::CREATED, Json(ApiResponse::success(response))))
@@ -1454,12 +1502,17 @@ pub async fn upload_photo(
         .await?
         .ok_or_else(|| AppError::validation("Employee not found or inactive"))?;
 
-    // 2. Verify ticket exists
+    // 2. Find the ticket
     let ticket = TicketRepository::find_by_id(&state.db, ticket_id)
         .await?
-        .ok_or_else(|| AppError::not_found("Ticket not found"))?;
+        .ok_or_else(forbidden_ticket_error)?;
 
-    // 3. Check photo limit
+    // 3. Authorization check: employee must be owner, assigned worker, or admin
+    if !is_authorized_for_ticket(&employee, &ticket) {
+        return Err(forbidden_ticket_error());
+    }
+
+    // 4. Check photo limit
     let current_count = TicketPhotoRepository::count_by_ticket_id(&state.db, ticket_id).await?;
     if current_count >= MAX_PHOTOS_PER_TICKET {
         return Err(AppError::photo_limit(format!(
@@ -1468,10 +1521,10 @@ pub async fn upload_photo(
         )));
     }
 
-    // 4. Check if storage is available (S3 or local fallback)
+    // 5. Check if storage is available (S3 or local fallback)
     let use_local_storage = state.storage.is_none();
 
-    // 5. Extract file from multipart form
+    // 6. Extract file from multipart form
     let mut file_data: Option<(String, Vec<u8>)> = None;
 
     while let Some(field) = multipart
@@ -1522,7 +1575,7 @@ pub async fn upload_photo(
     let (content_type, data) =
         file_data.ok_or_else(|| AppError::validation("No 'photo' field in request"))?;
 
-    // 6. Generate unique storage key
+    // 7. Generate unique storage key
     let photo_id = Uuid::new_v4();
     let extension = match content_type.as_str() {
         "image/jpeg" => "jpg",
@@ -1532,7 +1585,7 @@ pub async fn upload_photo(
     };
     let storage_key = format!("tickets/{}/{}.{}", ticket.ticket_id, photo_id, extension);
 
-    // 7. Upload to storage (S3 or local fallback)
+    // 8. Upload to storage (S3 or local fallback)
     let file_size = data.len() as i32;
     let url: String;
 
@@ -1568,7 +1621,7 @@ pub async fn upload_photo(
             .map_err(|e| AppError::server_error(format!("Failed to generate signed URL: {}", e)))?;
     }
 
-    // 8. Create database record
+    // 9. Create database record
     let photo = TicketPhotoRepository::create(
         &state.db,
         CreateTicketPhoto {
@@ -2345,5 +2398,110 @@ mod tests {
         assert!(json.contains("\"ticket_id\":\"660e8400-e29b-41d4-a716-446655440000\""));
         assert!(json.contains("\"content\":\"Customer mentioned ring has sentimental value\""));
         assert!(json.contains("\"created_by\":\"770e8400-e29b-41d4-a716-446655440000\""));
+    }
+
+    // =============================================================================
+    // Authorization function tests
+    // =============================================================================
+
+    fn create_test_employee(role: EmployeeRole, employee_id: Uuid) -> Employee {
+        Employee {
+            employee_id,
+            name: "Test Employee".to_string(),
+            pin_hash: "hash".to_string(),
+            role,
+            is_active: true,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn create_test_ticket(taken_in_by: Uuid, worked_by: Option<Uuid>) -> Ticket {
+        Ticket {
+            ticket_id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
+            friendly_code: "JR-TEST1".to_string(),
+            customer_id: Uuid::parse_str("660e8400-e29b-41d4-a716-446655440000").unwrap(),
+            item_type: Some("ring".to_string()),
+            item_description: "Gold ring".to_string(),
+            condition_notes: "Good condition".to_string(),
+            requested_work: "Resize".to_string(),
+            status: TicketStatus::Intake,
+            is_rush: false,
+            promise_date: None,
+            storage_location_id: Uuid::parse_str("770e8400-e29b-41d4-a716-446655440000").unwrap(),
+            quote_amount: None,
+            actual_amount: None,
+            taken_in_by,
+            worked_by,
+            closed_by: None,
+            last_modified_by: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            closed_at: None,
+            queue_position: None,
+        }
+    }
+
+    #[test]
+    fn test_is_authorized_for_ticket_owner() {
+        let employee_id = Uuid::parse_str("880e8400-e29b-41d4-a716-446655440000").unwrap();
+        let employee = create_test_employee(EmployeeRole::Staff, employee_id);
+        let ticket = create_test_ticket(employee_id, None);
+
+        assert!(is_authorized_for_ticket(&employee, &ticket));
+    }
+
+    #[test]
+    fn test_is_authorized_for_ticket_assigned_worker() {
+        let owner_id = Uuid::parse_str("880e8400-e29b-41d4-a716-446655440000").unwrap();
+        let worker_id = Uuid::parse_str("990e8400-e29b-41d4-a716-446655440000").unwrap();
+        let employee = create_test_employee(EmployeeRole::Staff, worker_id);
+        let ticket = create_test_ticket(owner_id, Some(worker_id));
+
+        assert!(is_authorized_for_ticket(&employee, &ticket));
+    }
+
+    #[test]
+    fn test_is_authorized_for_ticket_admin() {
+        let owner_id = Uuid::parse_str("880e8400-e29b-41d4-a716-446655440000").unwrap();
+        let admin_id = Uuid::parse_str("aa0e8400-e29b-41d4-a716-446655440000").unwrap();
+        let employee = create_test_employee(EmployeeRole::Admin, admin_id);
+        let ticket = create_test_ticket(owner_id, None);
+
+        // Admin can modify any ticket regardless of ownership
+        assert!(is_authorized_for_ticket(&employee, &ticket));
+    }
+
+    #[test]
+    fn test_is_authorized_for_ticket_unrelated_staff() {
+        let owner_id = Uuid::parse_str("880e8400-e29b-41d4-a716-446655440000").unwrap();
+        let worker_id = Uuid::parse_str("990e8400-e29b-41d4-a716-446655440000").unwrap();
+        let unrelated_id = Uuid::parse_str("bb0e8400-e29b-41d4-a716-446655440000").unwrap();
+        let employee = create_test_employee(EmployeeRole::Staff, unrelated_id);
+        let ticket = create_test_ticket(owner_id, Some(worker_id));
+
+        // Staff member who is neither owner nor assigned worker cannot modify
+        assert!(!is_authorized_for_ticket(&employee, &ticket));
+    }
+
+    #[test]
+    fn test_is_authorized_for_ticket_staff_no_worker_assigned() {
+        let owner_id = Uuid::parse_str("880e8400-e29b-41d4-a716-446655440000").unwrap();
+        let unrelated_id = Uuid::parse_str("bb0e8400-e29b-41d4-a716-446655440000").unwrap();
+        let employee = create_test_employee(EmployeeRole::Staff, unrelated_id);
+        let ticket = create_test_ticket(owner_id, None);
+
+        // Staff member who is not the owner cannot modify when no worker assigned
+        assert!(!is_authorized_for_ticket(&employee, &ticket));
+    }
+
+    #[test]
+    fn test_is_authorized_for_ticket_owner_and_admin() {
+        let owner_id = Uuid::parse_str("880e8400-e29b-41d4-a716-446655440000").unwrap();
+        let employee = create_test_employee(EmployeeRole::Admin, owner_id);
+        let ticket = create_test_ticket(owner_id, None);
+
+        // Admin who is also the owner should be authorized (tests short-circuit)
+        assert!(is_authorized_for_ticket(&employee, &ticket));
     }
 }
