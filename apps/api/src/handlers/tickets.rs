@@ -13,11 +13,12 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::middleware::{can_close_ticket, require_ticket_access};
 use crate::models::{
     CreateCustomer, CreateFieldHistory, CreateStatusHistory, CreateTicket, CreateTicketNote,
-    CreateTicketPhoto, Customer, Employee, EmployeeRole, QueueTicket, Ticket, TicketFilters,
-    TicketNote as TicketNoteModel, TicketPhoto as TicketPhotoModel, TicketSearchParams,
-    TicketStatus, UpdateTicket,
+    CreateTicketPhoto, Customer, Employee, EmployeeRole, Permission, QueueTicket, Ticket,
+    TicketFilters, TicketNote as TicketNoteModel, TicketPhoto as TicketPhotoModel,
+    TicketSearchParams, TicketStatus, UpdateTicket,
 };
 use crate::repositories::{
     CustomerRepository, EmployeeRepository, FieldHistoryRepository, StatusHistoryRepository,
@@ -905,6 +906,9 @@ async fn verify_admin_pin(pool: &sqlx::PgPool, pin: &str) -> Result<bool, AppErr
 }
 
 /// PUT /api/v1/tickets/:ticket_id - Update a ticket.
+///
+/// Staff can only modify tickets they own (taken_in_by or worked_by).
+/// Admins can modify any ticket.
 pub async fn update_ticket(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -924,10 +928,8 @@ pub async fn update_ticket(
         .await?
         .ok_or_else(forbidden_ticket_error)?;
 
-    // 3. Authorization check: employee must be owner, assigned worker, or admin
-    if !is_authorized_for_ticket(&employee, &existing_ticket) {
-        return Err(forbidden_ticket_error());
-    }
+    // 3. Authorization check: staff can only modify their own tickets, admin can modify any
+    require_ticket_access(&employee, &existing_ticket, Permission::ModifyOwnTicket)?;
 
     // 4. Check if ticket is closed/archived
     if !existing_ticket.status.is_open() {
@@ -1148,6 +1150,7 @@ pub struct CloseTicketResponse {
 /// Closes the ticket with the actual amount charged.
 /// Requires X-Employee-ID header for attribution.
 /// Only tickets with status ReadyForPickup can be closed.
+/// Only administrators can close tickets.
 pub async fn close_ticket(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1162,15 +1165,13 @@ pub async fn close_ticket(
         .await?
         .ok_or_else(|| AppError::validation("Employee not found or inactive"))?;
 
-    // 2. Find the ticket
+    // 2. Authorization check: only admins can close tickets
+    can_close_ticket(&employee)?;
+
+    // 3. Find the ticket
     let existing_ticket = TicketRepository::find_by_id(&state.db, ticket_id)
         .await?
-        .ok_or_else(forbidden_ticket_error)?;
-
-    // 3. Authorization check: employee must be owner, assigned worker, or admin
-    if !is_authorized_for_ticket(&employee, &existing_ticket) {
-        return Err(forbidden_ticket_error());
-    }
+        .ok_or_else(|| AppError::not_found("Ticket not found"))?;
 
     let previous_status = existing_ticket.status;
 
@@ -1237,6 +1238,7 @@ pub struct ChangeStatusResponse {
 ///
 /// Validates the status transition and records it in the status history.
 /// Requires X-Employee-ID header for attribution.
+/// Staff can only change status on tickets they own. Admins can change any.
 pub async fn change_status(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1256,10 +1258,8 @@ pub async fn change_status(
         .await?
         .ok_or_else(forbidden_ticket_error)?;
 
-    // 3. Authorization check: employee must be owner, assigned worker, or admin
-    if !is_authorized_for_ticket(&employee, &existing_ticket) {
-        return Err(forbidden_ticket_error());
-    }
+    // 3. Authorization check: staff can only change status on their own tickets
+    require_ticket_access(&employee, &existing_ticket, Permission::ModifyOwnTicket)?;
 
     let previous_status = existing_ticket.status;
 
@@ -1323,6 +1323,7 @@ pub struct ToggleRushResponse {
 ///
 /// Sets the is_rush flag and records the change in field history.
 /// Requires X-Employee-ID header for attribution.
+/// Staff can only toggle rush on tickets they own. Admins can toggle any.
 pub async fn toggle_rush(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1342,10 +1343,8 @@ pub async fn toggle_rush(
         .await?
         .ok_or_else(forbidden_ticket_error)?;
 
-    // 3. Authorization check: employee must be owner, assigned worker, or admin
-    if !is_authorized_for_ticket(&employee, &existing_ticket) {
-        return Err(forbidden_ticket_error());
-    }
+    // 3. Authorization check: staff can only toggle rush on their own tickets
+    require_ticket_access(&employee, &existing_ticket, Permission::ModifyOwnTicket)?;
 
     let previous_is_rush = existing_ticket.is_rush;
 
@@ -1415,6 +1414,7 @@ pub struct AddNoteResponse {
 ///
 /// Notes are append-only - no edit or delete available.
 /// Requires X-Employee-ID header for attribution.
+/// Any active employee (staff or admin) can add notes to any ticket.
 pub async fn add_note(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1429,17 +1429,12 @@ pub async fn add_note(
         .await?
         .ok_or_else(|| AppError::validation("Employee not found or inactive"))?;
 
-    // 2. Find the ticket
-    let existing_ticket = TicketRepository::find_by_id(&state.db, ticket_id)
+    // 2. Find the ticket (any active employee can add notes to any ticket)
+    let _existing_ticket = TicketRepository::find_by_id(&state.db, ticket_id)
         .await?
-        .ok_or_else(forbidden_ticket_error)?;
+        .ok_or_else(|| AppError::not_found("Ticket not found"))?;
 
-    // 3. Authorization check: employee must be owner, assigned worker, or admin
-    if !is_authorized_for_ticket(&employee, &existing_ticket) {
-        return Err(forbidden_ticket_error());
-    }
-
-    // 4. Validate content is not empty
+    // 3. Validate content is not empty
     if body.content.trim().is_empty() {
         return Err(AppError::validation("Note content cannot be empty"));
     }
@@ -1489,6 +1484,7 @@ pub struct UploadPhotoResponse {
 /// Accepts multipart/form-data with a single file field named "photo".
 /// Validates file type (jpeg, png, webp) and size (max 10MB).
 /// Requires X-Employee-ID header for attribution.
+/// Any active employee (staff or admin) can upload photos to any ticket.
 pub async fn upload_photo(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1503,17 +1499,12 @@ pub async fn upload_photo(
         .await?
         .ok_or_else(|| AppError::validation("Employee not found or inactive"))?;
 
-    // 2. Find the ticket
+    // 2. Find the ticket (any active employee can upload photos to any ticket)
     let ticket = TicketRepository::find_by_id(&state.db, ticket_id)
         .await?
-        .ok_or_else(forbidden_ticket_error)?;
+        .ok_or_else(|| AppError::not_found("Ticket not found"))?;
 
-    // 3. Authorization check: employee must be owner, assigned worker, or admin
-    if !is_authorized_for_ticket(&employee, &ticket) {
-        return Err(forbidden_ticket_error());
-    }
-
-    // 4. Check photo limit
+    // 3. Check photo limit
     let current_count = TicketPhotoRepository::count_by_ticket_id(&state.db, ticket_id).await?;
     if current_count >= MAX_PHOTOS_PER_TICKET {
         return Err(AppError::photo_limit(format!(

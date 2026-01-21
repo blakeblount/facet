@@ -15,7 +15,9 @@ pub mod ticket_photo;
 
 pub use admin_session::{AdminSession, AdminSessionResponse, CreateAdminSession};
 pub use customer::{CreateCustomer, Customer};
-pub use employee::{CreateEmployee, Employee, EmployeeRole, EmployeeSummary, UpdateEmployee};
+pub use employee::{
+    CreateEmployee, Employee, EmployeeRole, EmployeeSummary, Permission, UpdateEmployee,
+};
 pub use field_history::{CreateFieldHistory, FieldHistoryEntry};
 pub use status_history::{CreateStatusHistory, StatusHistoryEntry};
 pub use storage_location::{
