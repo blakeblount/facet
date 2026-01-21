@@ -106,8 +106,11 @@ pub fn api_router_with_limits(state: AppState, limits: BodyLimitConfig) -> Route
         )
         .route(
             "/:ticket_id",
-            get(handlers::get_ticket).put(handlers::update_ticket),
+            get(handlers::get_ticket)
+                .put(handlers::update_ticket)
+                .delete(handlers::delete_ticket),
         )
+        .route("/:ticket_id/restore", post(handlers::restore_ticket))
         .route("/:ticket_id/receipt.pdf", get(handlers::get_receipt_pdf))
         .route("/:ticket_id/label.pdf", get(handlers::get_label_pdf))
         .route("/:ticket_id/status", post(handlers::change_status))

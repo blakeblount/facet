@@ -19,6 +19,7 @@ pub use employees::{
 pub use locations::{create_location, list_locations, update_location};
 pub use settings::{get_settings, update_settings};
 pub use tickets::{
-    add_note, change_status, close_ticket, create_ticket, delete_photo, get_label_pdf, get_queue,
-    get_receipt_pdf, get_ticket, list_tickets, toggle_rush, update_ticket, upload_photo,
+    add_note, change_status, close_ticket, create_ticket, delete_photo, delete_ticket,
+    get_label_pdf, get_queue, get_receipt_pdf, get_ticket, list_tickets, restore_ticket,
+    toggle_rush, update_ticket, upload_photo,
 };

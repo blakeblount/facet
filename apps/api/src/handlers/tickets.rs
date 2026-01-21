@@ -1740,6 +1740,141 @@ pub async fn delete_photo(
     Ok(Json(ApiResponse::success(response)))
 }
 
+// =============================================================================
+// DELETE /tickets/:ticket_id - Soft-Delete Ticket (Admin Only)
+// =============================================================================
+
+/// Response for a soft-deleted ticket.
+#[derive(Debug, Clone, Serialize)]
+pub struct DeleteTicketResponse {
+    /// The ID of the deleted ticket
+    pub ticket_id: Uuid,
+    /// The friendly code of the deleted ticket
+    pub friendly_code: String,
+    /// Timestamp when the ticket was deleted
+    pub deleted_at: DateTime<Utc>,
+}
+
+/// DELETE /api/v1/tickets/:ticket_id - Soft-delete a ticket (admin only).
+///
+/// Requires admin authentication (X-Admin-Session or X-Admin-PIN header).
+/// The ticket is not permanently deleted; it is marked with a deleted_at timestamp
+/// and excluded from normal queries. Audit history (status_history, field_history)
+/// is preserved.
+pub async fn delete_ticket(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(ticket_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    use crate::handlers::admin::verify_admin_auth;
+
+    // 1. Verify admin authentication
+    verify_admin_auth(&state, &headers).await?;
+
+    // 2. Get an admin employee for attribution
+    let admin_pin = extract_admin_pin(&headers)?;
+    let admin = verify_admin_employee(&state.db, &admin_pin).await?;
+
+    // 3. Verify ticket exists and is not already deleted
+    let ticket = TicketRepository::find_by_id(&state.db, ticket_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Ticket not found"))?;
+
+    // 4. Soft-delete the ticket
+    let deleted_ticket = TicketRepository::soft_delete(&state.db, ticket_id, admin.employee_id)
+        .await
+        .map_err(|_| AppError::server_error("Failed to delete ticket"))?;
+
+    // 5. Record the deletion in field history
+    FieldHistoryRepository::create(
+        &state.db,
+        CreateFieldHistory {
+            ticket_id,
+            field_name: "deleted".to_string(),
+            old_value: Some("false".to_string()),
+            new_value: Some("true".to_string()),
+            changed_by: admin.employee_id,
+        },
+    )
+    .await?;
+
+    // 6. Return success response
+    let response = DeleteTicketResponse {
+        ticket_id,
+        friendly_code: ticket.friendly_code,
+        deleted_at: deleted_ticket.deleted_at.unwrap(),
+    };
+
+    Ok(Json(ApiResponse::success(response)))
+}
+
+// =============================================================================
+// POST /tickets/:ticket_id/restore - Restore Soft-Deleted Ticket (Admin Only)
+// =============================================================================
+
+/// Response for a restored ticket.
+#[derive(Debug, Clone, Serialize)]
+pub struct RestoreTicketResponse {
+    /// The ID of the restored ticket
+    pub ticket_id: Uuid,
+    /// The friendly code of the restored ticket
+    pub friendly_code: String,
+}
+
+/// POST /api/v1/tickets/:ticket_id/restore - Restore a soft-deleted ticket (admin only).
+///
+/// Requires admin authentication (X-Admin-Session or X-Admin-PIN header).
+/// Clears the deleted_at and deleted_by fields, making the ticket visible again.
+pub async fn restore_ticket(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(ticket_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    use crate::handlers::admin::verify_admin_auth;
+
+    // 1. Verify admin authentication
+    verify_admin_auth(&state, &headers).await?;
+
+    // 2. Get an admin employee for attribution
+    let admin_pin = extract_admin_pin(&headers)?;
+    let admin = verify_admin_employee(&state.db, &admin_pin).await?;
+
+    // 3. Verify ticket exists and is deleted (using including_deleted)
+    let ticket = TicketRepository::find_by_id_including_deleted(&state.db, ticket_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Ticket not found"))?;
+
+    if !ticket.is_deleted() {
+        return Err(AppError::validation("Ticket is not deleted"));
+    }
+
+    // 4. Restore the ticket
+    let restored_ticket = TicketRepository::restore(&state.db, ticket_id)
+        .await
+        .map_err(|_| AppError::server_error("Failed to restore ticket"))?;
+
+    // 5. Record the restoration in field history
+    FieldHistoryRepository::create(
+        &state.db,
+        CreateFieldHistory {
+            ticket_id,
+            field_name: "deleted".to_string(),
+            old_value: Some("true".to_string()),
+            new_value: Some("false".to_string()),
+            changed_by: admin.employee_id,
+        },
+    )
+    .await?;
+
+    // 6. Return success response
+    let response = RestoreTicketResponse {
+        ticket_id,
+        friendly_code: restored_ticket.friendly_code,
+    };
+
+    Ok(Json(ApiResponse::success(response)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2240,6 +2375,8 @@ mod tests {
             updated_at: Utc.with_ymd_and_hms(2025, 1, 2, 12, 0, 0).unwrap(),
             closed_at: Some(Utc.with_ymd_and_hms(2025, 1, 2, 12, 0, 0).unwrap()),
             queue_position: None,
+            deleted_at: None,
+            deleted_by: None,
         };
 
         let response = CloseTicketResponse {
@@ -2335,6 +2472,8 @@ mod tests {
             updated_at: Utc.with_ymd_and_hms(2025, 1, 1, 12, 0, 0).unwrap(),
             closed_at: None,
             queue_position: None,
+            deleted_at: None,
+            deleted_by: None,
         };
 
         let response = ToggleRushResponse {
@@ -2437,6 +2576,8 @@ mod tests {
             updated_at: Utc::now(),
             closed_at: None,
             queue_position: None,
+            deleted_at: None,
+            deleted_by: None,
         }
     }
 

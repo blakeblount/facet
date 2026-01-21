@@ -54,8 +54,25 @@ impl TicketRepository {
         Ok(ticket)
     }
 
-    /// Find a ticket by ID.
+    /// Find a ticket by ID (excludes soft-deleted tickets).
     pub async fn find_by_id(pool: &PgPool, ticket_id: Uuid) -> Result<Option<Ticket>, AppError> {
+        let ticket = sqlx::query_as::<_, Ticket>(
+            r#"
+            SELECT * FROM tickets WHERE ticket_id = $1 AND deleted_at IS NULL
+            "#,
+        )
+        .bind(ticket_id)
+        .fetch_optional(pool)
+        .await?;
+
+        Ok(ticket)
+    }
+
+    /// Find a ticket by ID, including soft-deleted tickets (for admin operations).
+    pub async fn find_by_id_including_deleted(
+        pool: &PgPool,
+        ticket_id: Uuid,
+    ) -> Result<Option<Ticket>, AppError> {
         let ticket = sqlx::query_as::<_, Ticket>(
             r#"
             SELECT * FROM tickets WHERE ticket_id = $1
@@ -68,14 +85,14 @@ impl TicketRepository {
         Ok(ticket)
     }
 
-    /// Find a ticket by friendly code.
+    /// Find a ticket by friendly code (excludes soft-deleted tickets).
     pub async fn find_by_code(
         pool: &PgPool,
         friendly_code: &str,
     ) -> Result<Option<Ticket>, AppError> {
         let ticket = sqlx::query_as::<_, Ticket>(
             r#"
-            SELECT * FROM tickets WHERE friendly_code = $1
+            SELECT * FROM tickets WHERE friendly_code = $1 AND deleted_at IS NULL
             "#,
         )
         .bind(friendly_code)
@@ -221,7 +238,8 @@ impl TicketRepository {
                 t.created_at
             FROM tickets t
             JOIN customers c ON t.customer_id = c.customer_id
-            WHERE ($1::boolean IS NULL OR t.is_rush = $1)
+            WHERE t.deleted_at IS NULL
+              AND ($1::boolean IS NULL OR t.is_rush = $1)
               AND ($2::uuid IS NULL OR t.customer_id = $2)
               AND ($3::timestamptz IS NULL OR t.created_at >= $3)
               AND ($4::timestamptz IS NULL OR t.created_at <= $4)
@@ -301,7 +319,8 @@ impl TicketRepository {
                 t.created_at
             FROM tickets t
             JOIN customers c ON t.customer_id = c.customer_id
-            WHERE t.status::text = ANY($1)
+            WHERE t.deleted_at IS NULL
+              AND t.status::text = ANY($1)
             ORDER BY t.is_rush DESC, t.created_at ASC
             LIMIT $2
             "#,
@@ -314,13 +333,14 @@ impl TicketRepository {
         Ok(tickets)
     }
 
-    /// Count tickets matching the given filters.
+    /// Count tickets matching the given filters (excludes soft-deleted tickets).
     pub async fn count(pool: &PgPool, filters: TicketFilters) -> Result<i64, AppError> {
         let count = sqlx::query_scalar::<_, i64>(
             r#"
             SELECT COUNT(*)
             FROM tickets t
-            WHERE ($1::boolean IS NULL OR t.is_rush = $1)
+            WHERE t.deleted_at IS NULL
+              AND ($1::boolean IS NULL OR t.is_rush = $1)
               AND ($2::uuid IS NULL OR t.customer_id = $2)
               AND ($3::timestamptz IS NULL OR t.created_at >= $3)
               AND ($4::timestamptz IS NULL OR t.created_at <= $4)
@@ -364,7 +384,8 @@ impl TicketRepository {
                 FROM tickets t
                 JOIN customers c ON t.customer_id = c.customer_id
                 LEFT JOIN ticket_notes n ON t.ticket_id = n.ticket_id
-                WHERE (
+                WHERE t.deleted_at IS NULL
+                AND (
                     t.friendly_code ILIKE $1
                     OR t.item_type ILIKE $1
                     OR t.item_description ILIKE $1
@@ -453,7 +474,8 @@ impl TicketRepository {
                 END as is_overdue
             FROM tickets t
             JOIN customers c ON t.customer_id = c.customer_id
-            WHERE t.status NOT IN ('closed', 'archived')
+            WHERE t.deleted_at IS NULL
+              AND t.status NOT IN ('closed', 'archived')
             ORDER BY t.is_rush DESC, t.created_at ASC
             "#,
         )
@@ -537,7 +559,8 @@ impl TicketRepository {
                 END as is_overdue
             FROM tickets t
             JOIN customers c ON t.customer_id = c.customer_id
-            WHERE t.status::text = $1
+            WHERE t.deleted_at IS NULL
+              AND t.status::text = $1
             ORDER BY t.is_rush DESC, t.created_at ASC
             LIMIT $2
             "#,
@@ -572,6 +595,54 @@ impl TicketRepository {
         .bind(ticket_id)
         .bind(is_rush)
         .bind(modified_by)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(ticket)
+    }
+
+    /// Soft-delete a ticket.
+    ///
+    /// Sets deleted_at and deleted_by fields. The ticket remains in the database
+    /// but is filtered out of normal queries.
+    pub async fn soft_delete(
+        pool: &PgPool,
+        ticket_id: Uuid,
+        deleted_by: Uuid,
+    ) -> Result<Ticket, AppError> {
+        let ticket = sqlx::query_as::<_, Ticket>(
+            r#"
+            UPDATE tickets SET
+                deleted_at = NOW(),
+                deleted_by = $2,
+                updated_at = NOW()
+            WHERE ticket_id = $1 AND deleted_at IS NULL
+            RETURNING *
+            "#,
+        )
+        .bind(ticket_id)
+        .bind(deleted_by)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(ticket)
+    }
+
+    /// Restore a soft-deleted ticket.
+    ///
+    /// Clears the deleted_at and deleted_by fields, making the ticket visible again.
+    pub async fn restore(pool: &PgPool, ticket_id: Uuid) -> Result<Ticket, AppError> {
+        let ticket = sqlx::query_as::<_, Ticket>(
+            r#"
+            UPDATE tickets SET
+                deleted_at = NULL,
+                deleted_by = NULL,
+                updated_at = NOW()
+            WHERE ticket_id = $1 AND deleted_at IS NOT NULL
+            RETURNING *
+            "#,
+        )
+        .bind(ticket_id)
         .fetch_one(pool)
         .await?;
 

@@ -121,6 +121,17 @@ pub struct Ticket {
 
     // Queue ordering
     pub queue_position: Option<i32>,
+
+    // Soft-delete fields
+    pub deleted_at: Option<DateTime<Utc>>,
+    pub deleted_by: Option<Uuid>,
+}
+
+impl Ticket {
+    /// Returns true if this ticket has been soft-deleted.
+    pub fn is_deleted(&self) -> bool {
+        self.deleted_at.is_some()
+    }
 }
 
 /// Summary view of a ticket for list views.
@@ -356,5 +367,73 @@ mod tests {
         assert!(!TicketStatus::Archived.can_transition_to(TicketStatus::WaitingOnParts));
         assert!(!TicketStatus::Archived.can_transition_to(TicketStatus::ReadyForPickup));
         assert!(!TicketStatus::Archived.can_transition_to(TicketStatus::Closed));
+    }
+
+    #[test]
+    fn test_ticket_is_deleted_when_deleted_at_is_some() {
+        use chrono::Utc;
+        use rust_decimal::Decimal;
+
+        let ticket = Ticket {
+            ticket_id: Uuid::new_v4(),
+            friendly_code: "JR-0001".to_string(),
+            customer_id: Uuid::new_v4(),
+            item_type: None,
+            item_description: "Test".to_string(),
+            condition_notes: "Test".to_string(),
+            requested_work: "Test".to_string(),
+            status: TicketStatus::Intake,
+            is_rush: false,
+            promise_date: None,
+            storage_location_id: Uuid::new_v4(),
+            quote_amount: Some(Decimal::new(100, 2)),
+            actual_amount: None,
+            taken_in_by: Uuid::new_v4(),
+            worked_by: None,
+            closed_by: None,
+            last_modified_by: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            closed_at: None,
+            queue_position: None,
+            deleted_at: Some(Utc::now()),
+            deleted_by: Some(Uuid::new_v4()),
+        };
+
+        assert!(ticket.is_deleted());
+    }
+
+    #[test]
+    fn test_ticket_is_not_deleted_when_deleted_at_is_none() {
+        use chrono::Utc;
+        use rust_decimal::Decimal;
+
+        let ticket = Ticket {
+            ticket_id: Uuid::new_v4(),
+            friendly_code: "JR-0001".to_string(),
+            customer_id: Uuid::new_v4(),
+            item_type: None,
+            item_description: "Test".to_string(),
+            condition_notes: "Test".to_string(),
+            requested_work: "Test".to_string(),
+            status: TicketStatus::Intake,
+            is_rush: false,
+            promise_date: None,
+            storage_location_id: Uuid::new_v4(),
+            quote_amount: Some(Decimal::new(100, 2)),
+            actual_amount: None,
+            taken_in_by: Uuid::new_v4(),
+            worked_by: None,
+            closed_by: None,
+            last_modified_by: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            closed_at: None,
+            queue_position: None,
+            deleted_at: None,
+            deleted_by: None,
+        };
+
+        assert!(!ticket.is_deleted());
     }
 }

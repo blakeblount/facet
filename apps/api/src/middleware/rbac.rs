@@ -139,6 +139,8 @@ mod tests {
             updated_at: Utc::now(),
             closed_at: None,
             queue_position: None,
+            deleted_at: None,
+            deleted_by: None,
         }
     }
 
