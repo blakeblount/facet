@@ -288,9 +288,9 @@
 				</p>
 				<p class="dropzone-hint">
 					{#if maxFiles > 1}
-						Up to {maxFiles} images, max {formatFileSize(maxSize)} each
+						Up to {maxFiles} images (JPG, PNG, WebP), max {formatFileSize(maxSize)} each
 					{:else}
-						Max {formatFileSize(maxSize)}
+						JPG, PNG, WebP — max {formatFileSize(maxSize)}
 					{/if}
 				</p>
 			</div>
