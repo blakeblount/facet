@@ -756,7 +756,7 @@
 					{/if}
 					{#if ticket.notes.length > 0}
 						<ul class="notes-list">
-							{#each ticket.notes as note (note.note_id)}
+							{#each ticket.notes.toSorted((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) as note (note.note_id)}
 								<li class="note-item">
 									<p class="note-content">{note.content}</p>
 									<span class="note-meta">
