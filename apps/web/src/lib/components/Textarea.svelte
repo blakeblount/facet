@@ -22,6 +22,8 @@
 		class?: string;
 		/** Unique ID for the textarea (auto-generated if not provided) */
 		id?: string;
+		/** Callback when textarea loses focus */
+		onblur?: () => void;
 	}
 
 	let {
@@ -35,7 +37,8 @@
 		autoResize = false,
 		name,
 		class: className = '',
-		id
+		id,
+		onblur
 	}: Props = $props();
 
 	// Generate a stable unique ID if not provided (only once per component instance)
@@ -85,6 +88,7 @@
 		bind:value
 		bind:this={textareaElement}
 		oninput={handleInput}
+		{onblur}
 		aria-invalid={error ? 'true' : undefined}
 		aria-describedby={error ? errorId : undefined}
 	></textarea>

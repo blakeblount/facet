@@ -24,6 +24,8 @@
 		files?: File[];
 		/** Additional CSS class for the wrapper */
 		class?: string;
+		/** Callback when files change (added or removed) */
+		onchange?: () => void;
 	}
 
 	let {
@@ -35,7 +37,8 @@
 		required = false,
 		error,
 		files = $bindable([]),
-		class: className = ''
+		class: className = '',
+		onchange
 	}: Props = $props();
 
 	let photoFiles = $state<PhotoFile[]>([]);
@@ -160,6 +163,7 @@
 		queueMicrotask(() => {
 			isSyncing = false;
 		});
+		onchange?.();
 	}
 
 	function handleDragEnter(e: DragEvent): void {

@@ -25,6 +25,8 @@
 		class?: string;
 		/** Unique ID for the select (auto-generated if not provided) */
 		id?: string;
+		/** Callback when select loses focus */
+		onblur?: () => void;
 	}
 
 	let {
@@ -37,7 +39,8 @@
 		required = false,
 		name,
 		class: className = '',
-		id
+		id,
+		onblur
 	}: Props = $props();
 
 	// Generate a stable unique ID if not provided
@@ -69,6 +72,15 @@
 	function close() {
 		isOpen = false;
 		highlightedIndex = -1;
+	}
+
+	function handleBlur(event: FocusEvent) {
+		// Only call onblur if focus is leaving the select entirely
+		const target = event.relatedTarget as Node | null;
+		if (target && (buttonRef?.contains(target) || listboxRef?.contains(target))) {
+			return;
+		}
+		onblur?.();
 	}
 
 	function selectOption(option: Option) {
@@ -205,6 +217,7 @@
 			{disabled}
 			onclick={toggle}
 			onkeydown={handleKeydown}
+			onblur={handleBlur}
 		>
 			<span class="select-value">{displayText}</span>
 			<span class="select-icon" aria-hidden="true">

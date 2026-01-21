@@ -173,6 +173,15 @@
 		setTimeout(() => {
 			showCustomerDropdown = false;
 		}, 200);
+		// Clear error if field is now valid
+		clearFieldErrorOnBlur('customerName', !!customerName.trim());
+	}
+
+	// Clear individual field error when the field becomes valid on blur
+	function clearFieldErrorOnBlur(fieldName: string, isValid: boolean) {
+		if (isValid && errors[fieldName]) {
+			errors = Object.fromEntries(Object.entries(errors).filter(([key]) => key !== fieldName));
+		}
 	}
 
 	function resetForm() {
@@ -569,6 +578,7 @@
 					required
 					disabled={isSubmitting}
 					class="full-width"
+					onblur={() => clearFieldErrorOnBlur('itemDescription', !!itemDescription.trim())}
 				/>
 				<Textarea
 					label="Condition Notes"
@@ -579,6 +589,7 @@
 					rows={3}
 					disabled={isSubmitting}
 					class="full-width"
+					onblur={() => clearFieldErrorOnBlur('conditionNotes', !!conditionNotes.trim())}
 				/>
 				<Textarea
 					label="Requested Work"
@@ -589,6 +600,7 @@
 					rows={3}
 					disabled={isSubmitting}
 					class="full-width"
+					onblur={() => clearFieldErrorOnBlur('requestedWork', !!requestedWork.trim())}
 				/>
 			</div>
 		</section>
@@ -631,6 +643,7 @@
 					error={errors.storageLocationId}
 					required
 					disabled={isSubmitting || isLoadingLocations}
+					onblur={() => clearFieldErrorOnBlur('storageLocationId', !!storageLocationId)}
 				/>
 
 				<Input
@@ -654,6 +667,7 @@
 				required
 				error={errors.photos}
 				disabled={isSubmitting}
+				onchange={() => clearFieldErrorOnBlur('photos', photos.length > 0)}
 			/>
 		</section>
 

@@ -20,6 +20,8 @@
 		class?: string;
 		/** Unique ID for the input (auto-generated if not provided) */
 		id?: string;
+		/** Callback when input loses focus */
+		onblur?: () => void;
 	}
 
 	let {
@@ -32,7 +34,8 @@
 		type = 'text',
 		name,
 		class: className = '',
-		id
+		id,
+		onblur
 	}: Props = $props();
 
 	// Generate a stable unique ID if not provided (only once per component instance)
@@ -62,6 +65,7 @@
 		bind:value
 		aria-invalid={error ? 'true' : undefined}
 		aria-describedby={error ? errorId : undefined}
+		{onblur}
 	/>
 
 	{#if error}
