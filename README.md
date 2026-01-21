@@ -102,7 +102,7 @@ docker compose up -d db
 
 ```bash
 cd apps/api
-cargo run
+cargo run --bin api
 ```
 
 4. Run Web:
