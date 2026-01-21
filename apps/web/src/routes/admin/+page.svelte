@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { PageData } from './$types';
-	import type { EmployeeSummary } from '$lib/types/api';
+	import type { EmployeeSummary, StorageLocationSummary, StoreSettings } from '$lib/types/api';
 	import {
 		themeStore,
 		THEMES,
@@ -10,8 +10,16 @@
 		type Theme
 	} from '$lib/stores/theme.svelte';
 	import { adminAuthStore } from '$lib/stores/adminAuth.svelte';
-	import { listEmployees, ApiClientError } from '$lib/services/api';
+	import {
+		listEmployees,
+		listStorageLocations,
+		getStoreSettings,
+		ApiClientError
+	} from '$lib/services/api';
 	import AdminPinModal from '$lib/components/AdminPinModal.svelte';
+	import StorageLocationModal from '$lib/components/StorageLocationModal.svelte';
+	import EmployeeModal from '$lib/components/EmployeeModal.svelte';
+	import StoreInfoModal from '$lib/components/StoreInfoModal.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -20,8 +28,23 @@
 	let employeesLoading = $state(false);
 	let employeesError = $state<string | null>(null);
 
+	// Storage locations state (fetched client-side for real-time updates)
+	let locations = $state<StorageLocationSummary[]>(data.locations || []);
+
+	// Store settings state (fetched client-side for real-time updates)
+	let settings = $state<StoreSettings | null>(data.settings || null);
+
 	// Whether to show the auth modal
 	let showAuthModal = $state(false);
+
+	// Modal states
+	let showLocationModal = $state(false);
+	let editingLocation = $state<StorageLocationSummary | null>(null);
+
+	let showEmployeeModal = $state(false);
+	let editingEmployee = $state<EmployeeSummary | null>(null);
+
+	let showStoreInfoModal = $state(false);
 
 	// Initialize auth store on mount
 	onMount(() => {
@@ -50,7 +73,7 @@
 		employeesError = null;
 
 		try {
-			const response = await listEmployees();
+			const response = await listEmployees(true); // Include inactive
 			employees = response.employees || [];
 		} catch (err) {
 			if (err instanceof ApiClientError) {
@@ -67,6 +90,23 @@
 			}
 		} finally {
 			employeesLoading = false;
+		}
+	}
+
+	async function fetchLocations() {
+		try {
+			const response = await listStorageLocations(true); // Include inactive
+			locations = response.locations || [];
+		} catch {
+			// Silently fail - we already have initial data
+		}
+	}
+
+	async function fetchSettings() {
+		try {
+			settings = await getStoreSettings();
+		} catch {
+			// Silently fail - we already have initial data
 		}
 	}
 
@@ -87,9 +127,85 @@
 		employees = [];
 		showAuthModal = true;
 	}
+
+	// Location modal handlers
+	function handleAddLocation() {
+		editingLocation = null;
+		showLocationModal = true;
+	}
+
+	function handleEditLocation(location: StorageLocationSummary) {
+		editingLocation = location;
+		showLocationModal = true;
+	}
+
+	function handleLocationModalClose() {
+		showLocationModal = false;
+		editingLocation = null;
+	}
+
+	function handleLocationSuccess() {
+		showLocationModal = false;
+		editingLocation = null;
+		fetchLocations();
+	}
+
+	// Employee modal handlers
+	function handleAddEmployee() {
+		editingEmployee = null;
+		showEmployeeModal = true;
+	}
+
+	function handleEditEmployee(employee: EmployeeSummary) {
+		editingEmployee = employee;
+		showEmployeeModal = true;
+	}
+
+	function handleEmployeeModalClose() {
+		showEmployeeModal = false;
+		editingEmployee = null;
+	}
+
+	function handleEmployeeSuccess() {
+		showEmployeeModal = false;
+		editingEmployee = null;
+		fetchEmployees();
+	}
+
+	// Store info modal handlers
+	function handleEditStoreInfo() {
+		showStoreInfoModal = true;
+	}
+
+	function handleStoreInfoModalClose() {
+		showStoreInfoModal = false;
+	}
+
+	function handleStoreInfoSuccess() {
+		showStoreInfoModal = false;
+		fetchSettings();
+	}
 </script>
 
 <AdminPinModal open={showAuthModal} onClose={handleAuthClose} onSuccess={handleAuthSuccess} />
+<StorageLocationModal
+	open={showLocationModal}
+	location={editingLocation}
+	onClose={handleLocationModalClose}
+	onSuccess={handleLocationSuccess}
+/>
+<EmployeeModal
+	open={showEmployeeModal}
+	employee={editingEmployee}
+	onClose={handleEmployeeModalClose}
+	onSuccess={handleEmployeeSuccess}
+/>
+<StoreInfoModal
+	open={showStoreInfoModal}
+	{settings}
+	onClose={handleStoreInfoModalClose}
+	onSuccess={handleStoreInfoSuccess}
+/>
 
 <div class="admin-page">
 	<div class="admin-header">
@@ -147,21 +263,44 @@
 			<section class="admin-section">
 				<div class="section-header">
 					<h2 class="section-title">Store Information</h2>
+					{#if adminAuthStore.isAuthenticated}
+						<button
+							class="edit-button"
+							onclick={handleEditStoreInfo}
+							title="Edit store information"
+						>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								width="16"
+								height="16"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+								<path d="m15 5 4 4" />
+							</svg>
+							Edit
+						</button>
+					{/if}
 				</div>
 				<div class="section-content">
-					{#if data.settings}
+					{#if settings}
 						<dl class="info-list">
 							<div class="info-item">
 								<dt>Store Name</dt>
-								<dd>{data.settings.store_name || 'Not configured'}</dd>
+								<dd>{settings.store_name || 'Not configured'}</dd>
 							</div>
 							<div class="info-item">
 								<dt>Phone</dt>
-								<dd>{data.settings.store_phone || 'Not set'}</dd>
+								<dd>{settings.store_phone || 'Not set'}</dd>
 							</div>
 							<div class="info-item">
 								<dt>Address</dt>
-								<dd>{data.settings.store_address || 'Not set'}</dd>
+								<dd>{settings.store_address || 'Not set'}</dd>
 							</div>
 						</dl>
 					{:else}
@@ -175,6 +314,24 @@
 					<h2 class="section-title">Employees</h2>
 					{#if !adminAuthStore.isAuthenticated}
 						<span class="auth-required-badge">Authentication Required</span>
+					{:else}
+						<button class="add-button" onclick={handleAddEmployee} title="Add new employee">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								width="16"
+								height="16"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<path d="M12 5v14" />
+								<path d="M5 12h14" />
+							</svg>
+							Add
+						</button>
 					{/if}
 				</div>
 				<div class="section-content">
@@ -210,11 +367,33 @@
 						<ul class="employee-list">
 							{#each employees as employee (employee.employee_id)}
 								<li class="employee-item">
-									<span class="employee-name">{employee.name}</span>
-									<span class="employee-role role-{employee.role}">{employee.role}</span>
-									{#if !employee.is_active}
-										<span class="employee-inactive">Inactive</span>
-									{/if}
+									<div class="employee-info">
+										<span class="employee-name">{employee.name}</span>
+										<span class="employee-role role-{employee.role}">{employee.role}</span>
+										{#if !employee.is_active}
+											<span class="employee-inactive">Inactive</span>
+										{/if}
+									</div>
+									<button
+										class="item-edit-button"
+										onclick={() => handleEditEmployee(employee)}
+										title="Edit employee"
+									>
+										<svg
+											xmlns="http://www.w3.org/2000/svg"
+											width="14"
+											height="14"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+										>
+											<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+											<path d="m15 5 4 4" />
+										</svg>
+									</button>
 								</li>
 							{/each}
 						</ul>
@@ -227,15 +406,58 @@
 			<section class="admin-section">
 				<div class="section-header">
 					<h2 class="section-title">Storage Locations</h2>
+					{#if adminAuthStore.isAuthenticated}
+						<button class="add-button" onclick={handleAddLocation} title="Add new storage location">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								width="16"
+								height="16"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<path d="M12 5v14" />
+								<path d="M5 12h14" />
+							</svg>
+							Add
+						</button>
+					{/if}
 				</div>
 				<div class="section-content">
-					{#if data.locations && data.locations.length > 0}
+					{#if locations && locations.length > 0}
 						<ul class="location-list">
-							{#each data.locations as location (location.location_id)}
+							{#each locations as location (location.location_id)}
 								<li class="location-item">
-									<span class="location-name">{location.name}</span>
-									{#if !location.is_active}
-										<span class="location-inactive">Inactive</span>
+									<div class="location-info">
+										<span class="location-name">{location.name}</span>
+										{#if !location.is_active}
+											<span class="location-inactive">Inactive</span>
+										{/if}
+									</div>
+									{#if adminAuthStore.isAuthenticated}
+										<button
+											class="item-edit-button"
+											onclick={() => handleEditLocation(location)}
+											title="Edit location"
+										>
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												width="14"
+												height="14"
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												stroke-width="2"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+											>
+												<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+												<path d="m15 5 4 4" />
+											</svg>
+										</button>
 									{/if}
 								</li>
 							{/each}
@@ -383,10 +605,19 @@
 	.location-item {
 		display: flex;
 		align-items: center;
+		justify-content: space-between;
 		gap: var(--space-md);
 		padding: var(--space-sm) var(--space-md);
 		background-color: var(--color-bg);
 		border-radius: var(--radius-md);
+	}
+
+	.employee-info,
+	.location-info {
+		display: flex;
+		align-items: center;
+		gap: var(--space-md);
+		flex: 1;
 	}
 
 	.employee-name,
@@ -523,5 +754,55 @@
 	.theme-description {
 		font-size: 0.875rem;
 		color: var(--color-text-muted);
+	}
+
+	.add-button,
+	.edit-button {
+		display: flex;
+		align-items: center;
+		gap: var(--space-xs);
+		padding: var(--space-xs) var(--space-sm);
+		background-color: transparent;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		color: var(--color-text-muted);
+		font-size: 0.75rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition:
+			background-color var(--transition-fast, 150ms ease),
+			border-color var(--transition-fast, 150ms ease),
+			color var(--transition-fast, 150ms ease);
+	}
+
+	.add-button:hover,
+	.edit-button:hover {
+		background-color: var(--color-bg-card);
+		border-color: var(--color-primary);
+		color: var(--color-primary);
+	}
+
+	.item-edit-button {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		padding: 0;
+		background-color: transparent;
+		border: 1px solid transparent;
+		border-radius: var(--radius-sm);
+		color: var(--color-text-muted);
+		cursor: pointer;
+		transition:
+			background-color var(--transition-fast, 150ms ease),
+			border-color var(--transition-fast, 150ms ease),
+			color var(--transition-fast, 150ms ease);
+	}
+
+	.item-edit-button:hover {
+		background-color: var(--color-bg-card);
+		border-color: var(--color-border);
+		color: var(--color-primary);
 	}
 </style>
