@@ -16,6 +16,7 @@ use crate::models::storage_location::{
 use crate::repositories::StorageLocationRepository;
 use crate::response::{created, ApiResponse};
 use crate::routes::AppState;
+use crate::validation::{validate_required, MAX_NAME_LENGTH};
 use uuid::Uuid;
 
 // =============================================================================
@@ -81,14 +82,11 @@ pub async fn create_location(
     // Verify admin authentication (session or PIN)
     verify_admin_auth(&state, &headers).await?;
 
-    // Validate input
-    let name = body.name.trim();
-    if name.is_empty() {
-        return Err(AppError::validation("Name is required"));
-    }
+    // Validate and sanitize input
+    let name = validate_required(&body.name, "name", MAX_NAME_LENGTH)?;
 
     // Check for duplicate name
-    let existing = StorageLocationRepository::find_by_name(&state.db, name).await?;
+    let existing = StorageLocationRepository::find_by_name(&state.db, &name).await?;
     if existing.is_some() {
         return Err(AppError::validation(
             "A location with this name already exists",
@@ -96,13 +94,8 @@ pub async fn create_location(
     }
 
     // Create the location
-    let location = StorageLocationRepository::create(
-        &state.db,
-        CreateStorageLocation {
-            name: name.to_string(),
-        },
-    )
-    .await?;
+    let location =
+        StorageLocationRepository::create(&state.db, CreateStorageLocation { name }).await?;
 
     // Return as StorageLocationSummary
     let summary = StorageLocationSummary {
@@ -139,15 +132,17 @@ pub async fn update_location(
     let existing = StorageLocationRepository::find_by_id(&state.db, location_id).await?;
     let existing = existing.ok_or_else(|| AppError::not_found("Location not found"))?;
 
-    // If name is being changed, check for duplicates
-    if let Some(ref new_name) = body.name {
-        let trimmed_name = new_name.trim();
-        if trimmed_name.is_empty() {
-            return Err(AppError::validation("Name cannot be empty"));
-        }
+    // Validate and sanitize name if provided
+    let name = body
+        .name
+        .as_ref()
+        .map(|n| validate_required(n, "name", MAX_NAME_LENGTH))
+        .transpose()?;
 
+    // If name is being changed, check for duplicates
+    if let Some(ref new_name) = name {
         // Check if another location has this name (case-insensitive)
-        let duplicate = StorageLocationRepository::find_by_name(&state.db, trimmed_name).await?;
+        let duplicate = StorageLocationRepository::find_by_name(&state.db, new_name).await?;
         if let Some(dup) = duplicate {
             if dup.location_id != existing.location_id {
                 return Err(AppError::validation(
@@ -157,9 +152,9 @@ pub async fn update_location(
         }
     }
 
-    // Build the update input with trimmed name if provided
+    // Build the update input with validated name
     let update_input = UpdateStorageLocation {
-        name: body.name.map(|n| n.trim().to_string()),
+        name,
         is_active: body.is_active,
     };
 

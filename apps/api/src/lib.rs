@@ -16,6 +16,7 @@ pub mod routes;
 pub mod services;
 pub mod storage;
 pub mod utils;
+pub mod validation;
 
 pub use config::Config;
 pub use cors::build_cors_layer;

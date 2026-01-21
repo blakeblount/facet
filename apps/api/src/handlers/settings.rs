@@ -8,6 +8,10 @@ use crate::models::store_settings::{StoreSettingsPublic, UpdateStoreSettings};
 use crate::repositories::StoreSettingsRepository;
 use crate::response::ApiResponse;
 use crate::routes::AppState;
+use crate::validation::{
+    validate_optional, validate_phone, MAX_ADDRESS_LENGTH, MAX_CURRENCY_LENGTH, MAX_NAME_LENGTH,
+    MAX_PHONE_LENGTH, MAX_TICKET_PREFIX_LENGTH,
+};
 
 // =============================================================================
 // GET /settings - Get Store Settings
@@ -55,8 +59,50 @@ pub async fn update_settings(
     // Verify admin authentication (session or PIN)
     verify_admin_auth(&state, &headers).await?;
 
+    // Validate and sanitize text fields
+    let store_name = body
+        .store_name
+        .as_ref()
+        .map(|v| validate_optional(Some(v.as_str()), "store_name", MAX_NAME_LENGTH))
+        .transpose()?
+        .flatten();
+    let store_phone = body
+        .store_phone
+        .as_ref()
+        .map(|v| validate_phone(Some(v.as_str()), MAX_PHONE_LENGTH))
+        .transpose()?
+        .flatten();
+    let store_address = body
+        .store_address
+        .as_ref()
+        .map(|v| validate_optional(Some(v.as_str()), "store_address", MAX_ADDRESS_LENGTH))
+        .transpose()?
+        .flatten();
+    let ticket_prefix = body
+        .ticket_prefix
+        .as_ref()
+        .map(|v| validate_optional(Some(v.as_str()), "ticket_prefix", MAX_TICKET_PREFIX_LENGTH))
+        .transpose()?
+        .flatten();
+    let currency = body
+        .currency
+        .as_ref()
+        .map(|v| validate_optional(Some(v.as_str()), "currency", MAX_CURRENCY_LENGTH))
+        .transpose()?
+        .flatten();
+
+    // Build validated update input
+    let validated_body = UpdateStoreSettings {
+        store_name,
+        store_phone,
+        store_address,
+        ticket_prefix,
+        currency,
+        max_photos_per_ticket: body.max_photos_per_ticket,
+    };
+
     // Update the settings
-    let settings = StoreSettingsRepository::update_settings(&state.db, body).await?;
+    let settings = StoreSettingsRepository::update_settings(&state.db, validated_body).await?;
 
     Ok(Json(ApiResponse::success(settings)))
 }

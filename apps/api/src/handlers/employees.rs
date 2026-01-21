@@ -20,6 +20,7 @@ use crate::models::employee::{CreateEmployee, EmployeeRole, EmployeeSummary, Upd
 use crate::repositories::{EmployeeRepository, EmployeeSessionRepository};
 use crate::response::{created, ApiResponse};
 use crate::routes::AppState;
+use crate::validation::{validate_required, MAX_NAME_LENGTH};
 
 // =============================================================================
 // GET /employees (admin) - List Employees
@@ -177,17 +178,20 @@ pub async fn create_employee(
     // Verify admin authentication (session or PIN)
     verify_admin_auth(&state, &headers).await?;
 
-    // Validate input
-    if body.name.trim().is_empty() {
-        return Err(AppError::validation("Name is required"));
-    }
+    // Validate and sanitize input
+    let name = validate_required(&body.name, "name", MAX_NAME_LENGTH)?;
 
     if body.pin.is_empty() {
         return Err(AppError::validation("PIN is required"));
     }
 
-    // Create the employee (PIN is hashed in the repository)
-    let employee = EmployeeRepository::create(&state.db, body).await?;
+    // Create the employee with validated name (PIN is hashed in the repository)
+    let create_input = CreateEmployee {
+        name,
+        pin: body.pin.clone(),
+        role: body.role,
+    };
+    let employee = EmployeeRepository::create(&state.db, create_input).await?;
 
     // Return as EmployeeSummary (without pin_hash)
     let summary = EmployeeSummary {
@@ -221,12 +225,12 @@ pub async fn update_employee(
     // Verify admin authentication (session or PIN)
     verify_admin_auth(&state, &headers).await?;
 
-    // Validate input - if name is provided, it shouldn't be empty
-    if let Some(ref name) = body.name {
-        if name.trim().is_empty() {
-            return Err(AppError::validation("Name cannot be empty"));
-        }
-    }
+    // Validate and sanitize input - if name is provided, validate it
+    let name = body
+        .name
+        .as_ref()
+        .map(|n| validate_required(n, "name", MAX_NAME_LENGTH))
+        .transpose()?;
 
     // Validate input - if PIN is provided, it shouldn't be empty
     if let Some(ref pin) = body.pin {
@@ -235,8 +239,16 @@ pub async fn update_employee(
         }
     }
 
+    // Build update input with validated name
+    let update_input = UpdateEmployee {
+        name,
+        pin: body.pin.clone(),
+        role: body.role,
+        is_active: body.is_active,
+    };
+
     // Update the employee
-    let employee = EmployeeRepository::update(&state.db, employee_id, body).await?;
+    let employee = EmployeeRepository::update(&state.db, employee_id, update_input).await?;
 
     match employee {
         Some(emp) => {

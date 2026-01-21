@@ -28,6 +28,10 @@ use crate::response::ApiResponse;
 use crate::routes::AppState;
 use crate::services::pdf::{generate_label_pdf, generate_receipt_pdf, LabelData, ReceiptData};
 use crate::utils::file_validation::validate_image_content_type;
+use crate::validation::{
+    validate_email, validate_optional, validate_phone, validate_required, MAX_DESCRIPTION_LENGTH,
+    MAX_EMAIL_LENGTH, MAX_ITEM_TYPE_LENGTH, MAX_NAME_LENGTH, MAX_NOTE_LENGTH, MAX_PHONE_LENGTH,
+};
 
 /// Query parameters for listing tickets.
 #[derive(Debug, Clone, Deserialize)]
@@ -661,7 +665,26 @@ pub async fn create_ticket(
     // 1. Extract and validate employee from session
     let employee = extract_employee_from_session(&state, &headers).await?;
 
-    // 2. Validate request - must have either customer_id OR customer, not both
+    // 2. Validate and sanitize ticket text fields
+    let item_description = validate_required(
+        &body.item_description,
+        "item_description",
+        MAX_DESCRIPTION_LENGTH,
+    )?;
+    let condition_notes = validate_required(
+        &body.condition_notes,
+        "condition_notes",
+        MAX_DESCRIPTION_LENGTH,
+    )?;
+    let requested_work = validate_required(
+        &body.requested_work,
+        "requested_work",
+        MAX_DESCRIPTION_LENGTH,
+    )?;
+    let item_type =
+        validate_optional(body.item_type.as_deref(), "item_type", MAX_ITEM_TYPE_LENGTH)?;
+
+    // 3. Validate request - must have either customer_id OR customer, not both
     let customer_id = match (&body.customer_id, &body.customer) {
         (Some(id), None) => {
             // Verify existing customer exists
@@ -671,13 +694,18 @@ pub async fn create_ticket(
             *id
         }
         (None, Some(inline)) => {
+            // Validate and sanitize inline customer fields
+            let customer_name = validate_required(&inline.name, "customer.name", MAX_NAME_LENGTH)?;
+            let customer_phone = validate_phone(inline.phone.as_deref(), MAX_PHONE_LENGTH)?;
+            let customer_email = validate_email(inline.email.as_deref(), MAX_EMAIL_LENGTH)?;
+
             // Create new customer inline
             let new_customer = CustomerRepository::create(
                 &state.db,
                 CreateCustomer {
-                    name: inline.name.clone(),
-                    phone: inline.phone.clone(),
-                    email: inline.email.clone(),
+                    name: customer_name,
+                    phone: customer_phone,
+                    email: customer_email,
                 },
             )
             .await?;
@@ -695,24 +723,13 @@ pub async fn create_ticket(
         }
     };
 
-    // 3. Validate required fields
-    if body.item_description.trim().is_empty() {
-        return Err(AppError::validation("item_description is required"));
-    }
-    if body.condition_notes.trim().is_empty() {
-        return Err(AppError::validation("condition_notes is required"));
-    }
-    if body.requested_work.trim().is_empty() {
-        return Err(AppError::validation("requested_work is required"));
-    }
-
     // 4. Create the ticket
     let create_ticket = CreateTicket {
         customer_id,
-        item_type: body.item_type,
-        item_description: body.item_description,
-        condition_notes: body.condition_notes,
-        requested_work: body.requested_work,
+        item_type,
+        item_description,
+        condition_notes,
+        requested_work,
         is_rush: body.is_rush,
         promise_date: body.promise_date,
         storage_location_id: body.storage_location_id,
@@ -975,7 +992,32 @@ pub async fn update_ticket(
         }
     }
 
-    // 5. Track field changes for audit trail
+    // 5. Validate and sanitize optional text fields
+    // For update, if a text field is provided, it must be validated.
+    // None in the request means "don't change this field".
+    // Some(value) means "validate and set to this value".
+    let item_type = body
+        .item_type
+        .as_ref()
+        .map(|v| validate_optional(Some(v.as_str()), "item_type", MAX_ITEM_TYPE_LENGTH))
+        .transpose()?;
+    let item_description = body
+        .item_description
+        .as_ref()
+        .map(|v| validate_required(v, "item_description", MAX_DESCRIPTION_LENGTH))
+        .transpose()?;
+    let condition_notes = body
+        .condition_notes
+        .as_ref()
+        .map(|v| validate_required(v, "condition_notes", MAX_DESCRIPTION_LENGTH))
+        .transpose()?;
+    let requested_work = body
+        .requested_work
+        .as_ref()
+        .map(|v| validate_required(v, "requested_work", MAX_DESCRIPTION_LENGTH))
+        .transpose()?;
+
+    // 6. Track field changes for audit trail
     let mut field_changes: Vec<CreateFieldHistory> = Vec::new();
 
     // Helper to record a field change
@@ -1016,22 +1058,28 @@ pub async fn update_ticket(
         };
     }
 
-    // Track changes for each field
-    track_change!("item_type", existing_ticket.item_type, body.item_type);
+    // Track changes for each field (using validated values)
+    // Flatten item_type for tracking: Option<Option<String>> -> Option<String>
+    let item_type_for_tracking = item_type.clone().flatten();
+    track_change!(
+        "item_type",
+        existing_ticket.item_type,
+        item_type_for_tracking
+    );
     track_change!(
         "item_description",
         Some(existing_ticket.item_description.clone()),
-        body.item_description
+        item_description
     );
     track_change!(
         "condition_notes",
         Some(existing_ticket.condition_notes.clone()),
-        body.condition_notes
+        condition_notes
     );
     track_change!(
         "requested_work",
         Some(existing_ticket.requested_work.clone()),
-        body.requested_work
+        requested_work
     );
     track_change!("is_rush", Some(existing_ticket.is_rush), body.is_rush);
     track_nullable_change!(
@@ -1060,12 +1108,18 @@ pub async fn update_ticket(
         body.worked_by_employee_id
     );
 
-    // 6. Build update struct
+    // 7. Build update struct with validated values
+    // For item_type: flatten Option<Option<String>> to Option<String>
+    // - None (request didn't include field) -> None (don't change)
+    // - Some(None) (request included empty/whitespace) -> None (but don't change in this case either)
+    // - Some(Some(value)) (request included non-empty) -> Some(value) (set to value)
+    let item_type_for_update = item_type.flatten();
+
     let update = UpdateTicket {
-        item_type: body.item_type,
-        item_description: body.item_description,
-        condition_notes: body.condition_notes,
-        requested_work: body.requested_work,
+        item_type: item_type_for_update,
+        item_description,
+        condition_notes,
+        requested_work,
         is_rush: body.is_rush,
         promise_date: body.promise_date,
         storage_location_id: body.storage_location_id,
@@ -1438,17 +1492,15 @@ pub async fn add_note(
         .await?
         .ok_or_else(|| AppError::not_found("Ticket not found"))?;
 
-    // 3. Validate content is not empty
-    if body.content.trim().is_empty() {
-        return Err(AppError::validation("Note content cannot be empty"));
-    }
+    // 3. Validate and sanitize note content
+    let content = validate_required(&body.content, "content", MAX_NOTE_LENGTH)?;
 
-    // 5. Create the note
+    // 4. Create the note
     let note = TicketNoteRepository::create(
         &state.db,
         CreateTicketNote {
             ticket_id,
-            content: body.content,
+            content,
             created_by: employee.employee_id,
         },
     )
