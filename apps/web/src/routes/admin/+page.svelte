@@ -1,18 +1,119 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import type { PageData } from './$types';
+	import type { EmployeeSummary } from '$lib/types/api';
 	import { themeStore, THEMES, THEME_NAMES, THEME_DESCRIPTIONS, type Theme } from '$lib/stores/theme.svelte';
+	import { adminAuthStore } from '$lib/stores/adminAuth.svelte';
+	import { listEmployees, ApiClientError } from '$lib/services/api';
+	import AdminPinModal from '$lib/components/AdminPinModal.svelte';
 
 	let { data }: { data: PageData } = $props();
+
+	// Employee list state (fetched client-side after auth)
+	let employees = $state<EmployeeSummary[]>([]);
+	let employeesLoading = $state(false);
+	let employeesError = $state<string | null>(null);
+
+	// Whether to show the auth modal
+	let showAuthModal = $state(false);
+
+	// Initialize auth store on mount
+	onMount(() => {
+		adminAuthStore.init();
+
+		// If already authenticated, fetch employees
+		if (adminAuthStore.isAuthenticated) {
+			fetchEmployees();
+		} else {
+			// Show auth modal on first load
+			showAuthModal = true;
+		}
+	});
+
+	// When auth state changes, fetch employees
+	$effect(() => {
+		if (adminAuthStore.isAuthenticated && adminAuthStore.pin) {
+			fetchEmployees();
+		}
+	});
+
+	async function fetchEmployees() {
+		if (!adminAuthStore.pin) return;
+
+		employeesLoading = true;
+		employeesError = null;
+
+		try {
+			const response = await listEmployees(adminAuthStore.pin);
+			employees = response.employees || [];
+		} catch (err) {
+			if (err instanceof ApiClientError) {
+				if (err.isCode('INVALID_PIN')) {
+					// PIN is no longer valid, logout and show auth modal
+					adminAuthStore.logout();
+					showAuthModal = true;
+					employeesError = null;
+				} else {
+					employeesError = err.message || 'Failed to load employees.';
+				}
+			} else {
+				employeesError = 'Failed to load employees.';
+			}
+		} finally {
+			employeesLoading = false;
+		}
+	}
 
 	function handleThemeChange(theme: Theme) {
 		themeStore.set(theme);
 	}
+
+	function handleAuthSuccess() {
+		showAuthModal = false;
+	}
+
+	function handleAuthClose() {
+		showAuthModal = false;
+	}
+
+	function handleLogout() {
+		adminAuthStore.logout();
+		employees = [];
+		showAuthModal = true;
+	}
 </script>
+
+<AdminPinModal
+	open={showAuthModal}
+	onClose={handleAuthClose}
+	onSuccess={handleAuthSuccess}
+/>
 
 <div class="admin-page">
 	<div class="admin-header">
-		<h1 class="page-title">Admin Settings</h1>
-		<p class="page-subtitle">Manage store settings, employees, and storage locations.</p>
+		<div class="header-content">
+			<h1 class="page-title">Admin Settings</h1>
+			<p class="page-subtitle">Manage store settings, employees, and storage locations.</p>
+		</div>
+		{#if adminAuthStore.isAuthenticated}
+			<button class="logout-button" onclick={handleLogout} title="Lock admin access">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					width="18"
+					height="18"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+					<path d="M7 11V7a5 5 0 0 1 10 0v4" />
+				</svg>
+				Lock
+			</button>
+		{/if}
 	</div>
 
 	{#if data.error}
@@ -70,11 +171,42 @@
 			<section class="admin-section">
 				<div class="section-header">
 					<h2 class="section-title">Employees</h2>
+					{#if !adminAuthStore.isAuthenticated}
+						<span class="auth-required-badge">Authentication Required</span>
+					{/if}
 				</div>
 				<div class="section-content">
-					{#if data.employees && data.employees.length > 0}
+					{#if !adminAuthStore.isAuthenticated}
+						<div class="auth-prompt">
+							<p class="placeholder-text">Enter admin PIN to view and manage employees.</p>
+							<button class="unlock-button" onclick={() => showAuthModal = true}>
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									width="16"
+									height="16"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+									<path d="M7 11V7a5 5 0 0 1 9.9-1" />
+								</svg>
+								Unlock
+							</button>
+						</div>
+					{:else if employeesLoading}
+						<p class="placeholder-text">Loading employees...</p>
+					{:else if employeesError}
+						<div class="error-inline">
+							<p>{employeesError}</p>
+							<button class="retry-button" onclick={fetchEmployees}>Retry</button>
+						</div>
+					{:else if employees.length > 0}
 						<ul class="employee-list">
-							{#each data.employees as employee (employee.employee_id)}
+							{#each employees as employee (employee.employee_id)}
 								<li class="employee-item">
 									<span class="employee-name">{employee.name}</span>
 									<span class="employee-role role-{employee.role}">{employee.role}</span>
@@ -125,7 +257,38 @@
 	}
 
 	.admin-header {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: var(--space-md);
 		margin-bottom: var(--space-sm);
+	}
+
+	.header-content {
+		flex: 1;
+	}
+
+	.logout-button {
+		display: flex;
+		align-items: center;
+		gap: var(--space-xs);
+		padding: var(--space-sm) var(--space-md);
+		background-color: var(--color-bg);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		color: var(--color-text-muted);
+		font-size: 0.875rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: background-color var(--transition-fast, 150ms ease),
+			border-color var(--transition-fast, 150ms ease),
+			color var(--transition-fast, 150ms ease);
+	}
+
+	.logout-button:hover {
+		background-color: var(--color-bg-card);
+		border-color: var(--color-text-muted);
+		color: var(--color-text);
 	}
 
 	.page-title {
@@ -254,6 +417,69 @@
 		background-color: #fef2f2;
 		color: #991b1b;
 		border-radius: var(--radius-sm);
+	}
+
+	.auth-required-badge {
+		padding: var(--space-xs) var(--space-sm);
+		font-size: 0.75rem;
+		font-weight: 500;
+		background-color: rgba(251, 191, 36, 0.1);
+		color: #92400e;
+		border: 1px solid #fbbf24;
+		border-radius: var(--radius-sm);
+	}
+
+	.auth-prompt {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: var(--space-md);
+	}
+
+	.unlock-button {
+		display: flex;
+		align-items: center;
+		gap: var(--space-xs);
+		padding: var(--space-sm) var(--space-md);
+		background-color: var(--color-primary);
+		border: none;
+		border-radius: var(--radius-md);
+		color: white;
+		font-size: 0.875rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: background-color var(--transition-fast, 150ms ease);
+	}
+
+	.unlock-button:hover {
+		background-color: var(--color-primary-dark, #1a2e4a);
+	}
+
+	.error-inline {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-sm);
+	}
+
+	.error-inline p {
+		margin: 0;
+		color: #991b1b;
+	}
+
+	.retry-button {
+		align-self: flex-start;
+		padding: var(--space-xs) var(--space-sm);
+		background-color: transparent;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		color: var(--color-text);
+		font-size: 0.875rem;
+		cursor: pointer;
+		transition: background-color var(--transition-fast, 150ms ease);
+	}
+
+	.retry-button:hover {
+		background-color: var(--color-bg);
 	}
 
 	.theme-toggle {

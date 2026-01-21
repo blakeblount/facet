@@ -581,6 +581,22 @@ export async function verifyEmployeePin(pin: string): Promise<VerifyPinResponse>
 	return post<VerifyPinResponse>('/employees/verify', { pin });
 }
 
+/**
+ * Response from admin PIN verification.
+ */
+export interface AdminVerifyResponse {
+	valid: boolean;
+}
+
+/**
+ * Verify the admin PIN.
+ * Returns { valid: true } if the PIN is correct.
+ * Throws ApiClientError with code 'INVALID_PIN' if incorrect.
+ */
+export async function verifyAdminPin(pin: string): Promise<AdminVerifyResponse> {
+	return post<AdminVerifyResponse>('/admin/verify', { pin });
+}
+
 // =============================================================================
 // Storage Location Endpoints
 // =============================================================================
