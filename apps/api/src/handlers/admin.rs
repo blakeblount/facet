@@ -1,9 +1,16 @@
 //! Admin request handlers.
 
-use axum::{extract::State, http::HeaderMap, response::IntoResponse, Json};
+use axum::{
+    extract::{ConnectInfo, State},
+    http::HeaderMap,
+    response::IntoResponse,
+    Json,
+};
 use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 
 use crate::error::AppError;
+use crate::middleware::extract_client_ip;
 use crate::models::store_settings::StoreSettingsPublic;
 use crate::repositories::StoreSettingsRepository;
 use crate::response::ApiResponse;
@@ -64,10 +71,24 @@ pub struct AdminSetupResponse {
 /// - FORBIDDEN: If setup is already complete
 /// - INVALID_PIN: If the current PIN is incorrect
 /// - VALIDATION_ERROR: If the new PIN is empty
+/// - RATE_LIMITED: If too many attempts from the same IP
 pub async fn admin_setup(
     State(state): State<AppState>,
+    headers: HeaderMap,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
     Json(body): Json<AdminSetupRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    // Extract client IP for rate limiting
+    let client_ip = extract_client_ip(&headers, connect_info.map(|c| c.0));
+
+    // Check rate limit
+    if let Err(retry_after) = state.rate_limit.check_rate_limit(client_ip).await {
+        return Err(AppError::rate_limited(
+            "Too many authentication attempts. Please wait before trying again.",
+            retry_after,
+        ));
+    }
+
     // Check if setup is already complete
     let is_complete = StoreSettingsRepository::is_setup_complete(&state.db).await?;
     if is_complete {
@@ -77,6 +98,8 @@ pub async fn admin_setup(
     // Verify the current PIN
     let is_valid = StoreSettingsRepository::verify_admin_pin(&state.db, &body.current_pin).await?;
     if !is_valid {
+        // Record failure for exponential backoff
+        state.rate_limit.record_failure(client_ip).await;
         return Err(AppError::invalid_pin("Invalid current PIN"));
     }
 
@@ -90,6 +113,9 @@ pub async fn admin_setup(
 
     // Mark setup as complete
     let settings = StoreSettingsRepository::mark_setup_complete(&state.db).await?;
+
+    // Record success to reset backoff
+    state.rate_limit.record_success(client_ip).await;
 
     let response = AdminSetupResponse { settings };
     Ok(Json(ApiResponse::success(response)))
@@ -144,15 +170,34 @@ pub struct AdminVerifyResponse {
 ///
 /// # Errors
 /// - INVALID_PIN: If the PIN is incorrect
+/// - RATE_LIMITED: If too many attempts from the same IP
 pub async fn verify_admin(
     State(state): State<AppState>,
+    headers: HeaderMap,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
     Json(body): Json<AdminVerifyRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    // Extract client IP for rate limiting
+    let client_ip = extract_client_ip(&headers, connect_info.map(|c| c.0));
+
+    // Check rate limit
+    if let Err(retry_after) = state.rate_limit.check_rate_limit(client_ip).await {
+        return Err(AppError::rate_limited(
+            "Too many authentication attempts. Please wait before trying again.",
+            retry_after,
+        ));
+    }
+
     let is_valid = StoreSettingsRepository::verify_admin_pin(&state.db, &body.pin).await?;
 
     if !is_valid {
+        // Record failure for exponential backoff
+        state.rate_limit.record_failure(client_ip).await;
         return Err(AppError::invalid_pin("Invalid admin PIN"));
     }
+
+    // Record success to reset backoff
+    state.rate_limit.record_success(client_ip).await;
 
     let response = AdminVerifyResponse { valid: true };
     Ok(Json(ApiResponse::success(response)))

@@ -1,4 +1,5 @@
 use api::{api_router, create_pool, test_connection, AppState, Config, DbConfig};
+use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::signal;
 use tower_http::cors::{Any, CorsLayer};
@@ -51,10 +52,15 @@ async fn main() {
         .await
         .expect("Failed to bind to address");
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .expect("Server error");
+    // Use into_make_service_with_connect_info to enable ConnectInfo<SocketAddr>
+    // extraction in handlers for rate limiting
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .expect("Server error");
 
     tracing::info!("Server shutdown complete");
 }

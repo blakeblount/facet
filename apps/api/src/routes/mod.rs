@@ -20,6 +20,7 @@ use sqlx::postgres::PgPool;
 use tower_http::services::ServeDir;
 
 use crate::handlers;
+use crate::middleware::RateLimitState;
 
 pub use health::health_check;
 
@@ -34,12 +35,18 @@ pub struct AppState {
     pub db: PgPool,
     /// S3-compatible storage client for photo uploads (optional for dev environments)
     pub storage: Option<StorageClient>,
+    /// Rate limiter state for PIN verification endpoints
+    pub rate_limit: RateLimitState,
 }
 
 impl AppState {
     /// Create a new AppState with the given database pool.
     pub fn new(db: PgPool) -> Self {
-        Self { db, storage: None }
+        Self {
+            db,
+            storage: None,
+            rate_limit: RateLimitState::new(),
+        }
     }
 
     /// Create a new AppState with database pool and storage client.
@@ -47,6 +54,7 @@ impl AppState {
         Self {
             db,
             storage: Some(storage),
+            rate_limit: RateLimitState::new(),
         }
     }
 }

@@ -1,16 +1,18 @@
 //! Employee request handlers.
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{ConnectInfo, Path, Query, State},
     http::HeaderMap,
     response::IntoResponse,
     Json,
 };
 use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 use uuid::Uuid;
 
 use crate::auth::verify_pin;
 use crate::error::AppError;
+use crate::middleware::extract_client_ip;
 use crate::models::employee::{CreateEmployee, EmployeeRole, EmployeeSummary, UpdateEmployee};
 use crate::repositories::{EmployeeRepository, StoreSettingsRepository};
 use crate::response::{created, ApiResponse};
@@ -113,16 +115,33 @@ pub struct VerifyPinResponse {
 /// ID, name, and role if the PIN is valid.
 ///
 /// Returns INVALID_PIN error if no active employee matches the PIN.
+/// Returns RATE_LIMITED error (429) if too many attempts from the same IP.
 pub async fn verify_employee_pin(
     State(state): State<AppState>,
+    headers: HeaderMap,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
     Json(body): Json<VerifyPinRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    // Extract client IP for rate limiting
+    let client_ip = extract_client_ip(&headers, connect_info.map(|c| c.0));
+
+    // Check rate limit
+    if let Err(retry_after) = state.rate_limit.check_rate_limit(client_ip).await {
+        return Err(AppError::rate_limited(
+            "Too many authentication attempts. Please wait before trying again.",
+            retry_after,
+        ));
+    }
+
     // Get all active employees for PIN verification
     let employees = EmployeeRepository::find_active_for_pin_verification(&state.db).await?;
 
     // Find an employee whose PIN matches
     for employee in employees {
         if verify_pin(&body.pin, &employee.pin_hash)? {
+            // Record success to reset backoff
+            state.rate_limit.record_success(client_ip).await;
+
             let response = VerifyPinResponse {
                 employee_id: employee.employee_id,
                 name: employee.name,
@@ -131,6 +150,9 @@ pub async fn verify_employee_pin(
             return Ok(Json(ApiResponse::success(response)));
         }
     }
+
+    // Record failure for exponential backoff
+    state.rate_limit.record_failure(client_ip).await;
 
     // No matching PIN found
     Err(AppError::invalid_pin("Invalid PIN"))

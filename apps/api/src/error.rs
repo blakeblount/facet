@@ -19,6 +19,7 @@ pub mod codes {
     pub const CONFLICT: &str = "CONFLICT";
     pub const PHOTO_LIMIT: &str = "PHOTO_LIMIT";
     pub const PRINT_REQUIRED: &str = "PRINT_REQUIRED";
+    pub const RATE_LIMITED: &str = "RATE_LIMITED";
     pub const SERVER_ERROR: &str = "SERVER_ERROR";
 }
 
@@ -46,6 +47,8 @@ pub enum AppError {
     PhotoLimit(String),
     /// Cannot complete action until print succeeds (422).
     PrintRequired(String),
+    /// Too many requests (429).
+    RateLimited { message: String, retry_after: u64 },
     /// Internal server error (500).
     ServerError(String),
 }
@@ -61,6 +64,7 @@ impl AppError {
             AppError::Conflict(_) => codes::CONFLICT,
             AppError::PhotoLimit(_) => codes::PHOTO_LIMIT,
             AppError::PrintRequired(_) => codes::PRINT_REQUIRED,
+            AppError::RateLimited { .. } => codes::RATE_LIMITED,
             AppError::ServerError(_) => codes::SERVER_ERROR,
         }
     }
@@ -75,6 +79,7 @@ impl AppError {
             AppError::Conflict(_) => StatusCode::CONFLICT,
             AppError::PhotoLimit(_) => StatusCode::UNPROCESSABLE_ENTITY,
             AppError::PrintRequired(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            AppError::RateLimited { .. } => StatusCode::TOO_MANY_REQUESTS,
             AppError::ServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -90,6 +95,15 @@ impl AppError {
             | AppError::PhotoLimit(msg)
             | AppError::PrintRequired(msg)
             | AppError::ServerError(msg) => msg,
+            AppError::RateLimited { message, .. } => message,
+        }
+    }
+
+    /// Get the Retry-After value if this is a rate limited error.
+    pub fn retry_after(&self) -> Option<u64> {
+        match self {
+            AppError::RateLimited { retry_after, .. } => Some(*retry_after),
+            _ => None,
         }
     }
 
@@ -132,6 +146,14 @@ impl AppError {
     pub fn server_error(message: impl Into<String>) -> Self {
         AppError::ServerError(message.into())
     }
+
+    /// Create a rate limited error with Retry-After duration.
+    pub fn rate_limited(message: impl Into<String>, retry_after: u64) -> Self {
+        AppError::RateLimited {
+            message: message.into(),
+            retry_after,
+        }
+    }
 }
 
 impl std::fmt::Display for AppError {
@@ -159,7 +181,21 @@ impl IntoResponse for AppError {
             },
         };
 
-        (self.status_code(), Json(error_response)).into_response()
+        let status = self.status_code();
+        let retry_after = self.retry_after();
+
+        if let Some(seconds) = retry_after {
+            // Include Retry-After header for rate limited errors
+            let mut response = (status, Json(error_response)).into_response();
+            response.headers_mut().insert(
+                axum::http::header::RETRY_AFTER,
+                axum::http::HeaderValue::from_str(&seconds.to_string())
+                    .unwrap_or_else(|_| axum::http::HeaderValue::from_static("60")),
+            );
+            response
+        } else {
+            (status, Json(error_response)).into_response()
+        }
     }
 }
 
@@ -318,6 +354,7 @@ mod tests {
         assert_eq!(AppError::conflict("").code(), codes::CONFLICT);
         assert_eq!(AppError::photo_limit("").code(), codes::PHOTO_LIMIT);
         assert_eq!(AppError::print_required("").code(), codes::PRINT_REQUIRED);
+        assert_eq!(AppError::rate_limited("", 60).code(), codes::RATE_LIMITED);
         assert_eq!(AppError::server_error("").code(), codes::SERVER_ERROR);
     }
 
@@ -343,8 +380,44 @@ mod tests {
             StatusCode::UNPROCESSABLE_ENTITY
         );
         assert_eq!(
+            AppError::rate_limited("", 60).status_code(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        assert_eq!(
             AppError::server_error("").status_code(),
             StatusCode::INTERNAL_SERVER_ERROR
         );
+    }
+
+    #[tokio::test]
+    async fn test_rate_limited_error_response() {
+        let err = AppError::rate_limited("Too many requests", 30);
+        let response = err.into_response();
+        let status = response.status();
+
+        // Check status code
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+
+        // Check Retry-After header
+        let retry_after = response.headers().get(axum::http::header::RETRY_AFTER);
+        assert!(retry_after.is_some());
+        assert_eq!(retry_after.unwrap().to_str().unwrap(), "30");
+
+        // Check response body
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let parsed: TestErrorResponse = serde_json::from_slice(&body).unwrap();
+
+        assert!(parsed.data.is_none());
+        assert_eq!(parsed.error.code, codes::RATE_LIMITED);
+        assert_eq!(parsed.error.message, "Too many requests");
+    }
+
+    #[test]
+    fn test_rate_limited_retry_after() {
+        let err = AppError::rate_limited("Test", 60);
+        assert_eq!(err.retry_after(), Some(60));
+
+        let err2 = AppError::validation("Test");
+        assert_eq!(err2.retry_after(), None);
     }
 }
