@@ -2,6 +2,8 @@
 	import Modal from './Modal.svelte';
 	import Button from './Button.svelte';
 	import Input from './Input.svelte';
+	import Select from './Select.svelte';
+	import Textarea from './Textarea.svelte';
 	import PhotoUpload from './PhotoUpload.svelte';
 	import EmployeeIdModal from './EmployeeIdModal.svelte';
 	import {
@@ -13,11 +15,14 @@
 		addTicketNote,
 		setCurrentEmployee,
 		verifyEmployeePin,
+		updateTicket,
+		listStorageLocations,
 		type TicketDetailResponse,
 		type TicketStatus,
-		type TicketPhoto
+		type TicketPhoto,
+		type StorageLocationSummary
 	} from '$lib/services/api';
-	import type { VerifyPinResponse, EmployeeInfo } from '$lib/types/api';
+	import type { VerifyPinResponse, EmployeeInfo, UpdateTicketRequest } from '$lib/types/api';
 	import { uploadTicketPhoto } from '$lib/services/api';
 
 	interface Props {
@@ -27,25 +32,15 @@
 		open: boolean;
 		/** Callback when modal closes */
 		onClose: () => void;
-		/** Whether editing mode is enabled (shows edit indicators) */
-		isEditing?: boolean;
-		/** Callback when edit mode is requested */
+		/** Callback when edit mode is requested (for parent notification) */
 		onEdit?: () => void;
 		/** Callback when ticket is closed successfully */
 		onTicketClosed?: () => void;
-		/** Callback when ticket is updated (e.g., rush status changed) */
+		/** Callback when ticket is updated (e.g., rush status changed, edits saved) */
 		onTicketUpdated?: () => void;
 	}
 
-	let {
-		ticketId,
-		open,
-		onClose,
-		isEditing = false,
-		onEdit,
-		onTicketClosed,
-		onTicketUpdated
-	}: Props = $props();
+	let { ticketId, open, onClose, onEdit, onTicketClosed, onTicketUpdated }: Props = $props();
 
 	let ticket: TicketDetailResponse | null = $state(null);
 	let loading: boolean = $state(false);
@@ -89,6 +84,24 @@
 	let noteError: string | null = $state(null);
 	let showNoteEmployeeModal: boolean = $state(false);
 
+	// Internal edit mode state
+	let internalEditMode: boolean = $state(false);
+	let editFormData = $state({
+		item_type: '',
+		item_description: '',
+		condition_notes: '',
+		requested_work: '',
+		promise_date: '',
+		storage_location_id: '',
+		quote_amount: '',
+		actual_amount: ''
+	});
+	let storageLocations: StorageLocationSummary[] = $state([]);
+	let isLoadingLocations: boolean = $state(false);
+	let isSavingEdit: boolean = $state(false);
+	let editError: string | null = $state(null);
+	let showEditEmployeeModal: boolean = $state(false);
+
 	// Fetch ticket when ticketId changes and modal is open
 	$effect(() => {
 		if (open && ticketId) {
@@ -97,6 +110,8 @@
 			// Reset state when modal closes
 			ticket = null;
 			error = null;
+			internalEditMode = false;
+			editError = null;
 		}
 	});
 
@@ -168,9 +183,96 @@
 	}
 
 	// Action handlers
-	function handleEditTicket() {
+	async function handleEditTicket() {
+		if (!ticket) return;
+
+		// Initialize form data from ticket
+		editFormData = {
+			item_type: ticket.item_type ?? '',
+			item_description: ticket.item_description ?? '',
+			condition_notes: ticket.condition_notes ?? '',
+			requested_work: ticket.requested_work ?? '',
+			promise_date: ticket.promise_date ?? '',
+			storage_location_id: ticket.storage_location.location_id ?? '',
+			quote_amount: ticket.quote_amount ?? '',
+			actual_amount: ticket.actual_amount ?? ''
+		};
+
+		// Load storage locations if not already loaded
+		if (storageLocations.length === 0) {
+			isLoadingLocations = true;
+			try {
+				const response = await listStorageLocations(false);
+				storageLocations = response.locations;
+			} catch (e) {
+				console.error('Failed to load storage locations:', e);
+			} finally {
+				isLoadingLocations = false;
+			}
+		}
+
+		editError = null;
+		internalEditMode = true;
+
+		// Also call parent callback if provided
 		onEdit?.();
 	}
+
+	function cancelEdit() {
+		internalEditMode = false;
+		editError = null;
+	}
+
+	function handleSaveEditClick() {
+		editError = null;
+		showEditEmployeeModal = true;
+	}
+
+	async function handleEditEmployeeSuccess(employee: VerifyPinResponse | EmployeeInfo) {
+		if (!ticket) return;
+		showEditEmployeeModal = false;
+		isSavingEdit = true;
+		editError = null;
+
+		try {
+			setCurrentEmployee(employee.employee_id);
+
+			const request: UpdateTicketRequest = {
+				item_type: editFormData.item_type.trim() || null,
+				item_description: editFormData.item_description.trim(),
+				condition_notes: editFormData.condition_notes.trim(),
+				requested_work: editFormData.requested_work.trim(),
+				promise_date: editFormData.promise_date || null,
+				storage_location_id: editFormData.storage_location_id,
+				quote_amount: editFormData.quote_amount.trim() || null,
+				actual_amount: editFormData.actual_amount.trim() || null
+			};
+
+			await updateTicket(ticket.ticket_id, request);
+
+			// Refresh ticket to show updated data
+			await fetchTicket(ticket.ticket_id);
+
+			// Exit edit mode
+			internalEditMode = false;
+
+			// Notify parent that ticket was updated
+			onTicketUpdated?.();
+		} catch (e) {
+			editError = e instanceof Error ? e.message : 'Failed to save changes';
+		} finally {
+			isSavingEdit = false;
+			setCurrentEmployee(null);
+		}
+	}
+
+	// Convert storage locations to Select options
+	const locationOptions = $derived(
+		storageLocations.map((loc) => ({
+			value: loc.location_id,
+			label: loc.name
+		}))
+	);
 
 	// Lightbox handlers
 	function openLightbox(photo: TicketPhoto) {
@@ -485,60 +587,61 @@
 			<section class="detail-section">
 				<h3 class="section-title">Item Details</h3>
 				<div class="section-content">
-					{#if ticket.item_type}
-						<div class="info-row" class:editable={isEditing}>
-							<span class="info-label">Type</span>
-							<span class="info-value">
-								{ticket.item_type}
-								{#if isEditing}
-									<svg class="edit-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-										<path
-											d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM11.189 6.25 9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064l6.286-6.286Z"
-										/>
-									</svg>
-								{/if}
-							</span>
+					{#if internalEditMode}
+						<div class="edit-field">
+							<Input
+								label="Type"
+								placeholder="e.g., Ring, Necklace, Watch"
+								bind:value={editFormData.item_type}
+								disabled={isSavingEdit}
+							/>
+						</div>
+						<div class="edit-field">
+							<Input
+								label="Description"
+								placeholder="Describe the item"
+								bind:value={editFormData.item_description}
+								disabled={isSavingEdit}
+							/>
+						</div>
+						<div class="edit-field">
+							<Textarea
+								label="Condition Notes"
+								placeholder="Describe the current condition"
+								bind:value={editFormData.condition_notes}
+								rows={3}
+								disabled={isSavingEdit}
+							/>
+						</div>
+						<div class="edit-field">
+							<Textarea
+								label="Requested Work"
+								placeholder="Describe the work to be done"
+								bind:value={editFormData.requested_work}
+								rows={3}
+								disabled={isSavingEdit}
+							/>
+						</div>
+					{:else}
+						{#if ticket.item_type}
+							<div class="info-row">
+								<span class="info-label">Type</span>
+								<span class="info-value">{ticket.item_type}</span>
+							</div>
+						{/if}
+						<div class="info-row">
+							<span class="info-label">Description</span>
+							<span class="info-value">{ticket.item_description}</span>
+						</div>
+						<div class="info-row">
+							<span class="info-label">Condition</span>
+							<span class="info-value text-block">{ticket.condition_notes}</span>
+						</div>
+						<div class="info-row">
+							<span class="info-label">Requested Work</span>
+							<span class="info-value text-block">{ticket.requested_work}</span>
 						</div>
 					{/if}
-					<div class="info-row" class:editable={isEditing}>
-						<span class="info-label">Description</span>
-						<span class="info-value">
-							{ticket.item_description}
-							{#if isEditing}
-								<svg class="edit-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-									<path
-										d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM11.189 6.25 9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064l6.286-6.286Z"
-									/>
-								</svg>
-							{/if}
-						</span>
-					</div>
-					<div class="info-row" class:editable={isEditing}>
-						<span class="info-label">Condition</span>
-						<span class="info-value text-block">
-							{ticket.condition_notes}
-							{#if isEditing}
-								<svg class="edit-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-									<path
-										d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM11.189 6.25 9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064l6.286-6.286Z"
-									/>
-								</svg>
-							{/if}
-						</span>
-					</div>
-					<div class="info-row" class:editable={isEditing}>
-						<span class="info-label">Requested Work</span>
-						<span class="info-value text-block">
-							{ticket.requested_work}
-							{#if isEditing}
-								<svg class="edit-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-									<path
-										d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM11.189 6.25 9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064l6.286-6.286Z"
-									/>
-								</svg>
-							{/if}
-						</span>
-					</div>
 				</div>
 			</section>
 
@@ -595,32 +698,35 @@
 			<section class="detail-section">
 				<h3 class="section-title">Pricing</h3>
 				<div class="section-content">
-					<div class="info-row" class:editable={isEditing}>
-						<span class="info-label">Quote</span>
-						<span class="info-value">
-							{formatCurrency(ticket.quote_amount)}
-							{#if isEditing}
-								<svg class="edit-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-									<path
-										d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM11.189 6.25 9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064l6.286-6.286Z"
-									/>
-								</svg>
-							{/if}
-						</span>
-					</div>
-					<div class="info-row" class:editable={isEditing}>
-						<span class="info-label">Actual Charged</span>
-						<span class="info-value">
-							{formatCurrency(ticket.actual_amount)}
-							{#if isEditing}
-								<svg class="edit-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-									<path
-										d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM11.189 6.25 9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064l6.286-6.286Z"
-									/>
-								</svg>
-							{/if}
-						</span>
-					</div>
+					{#if internalEditMode}
+						<div class="edit-field">
+							<Input
+								label="Quote Amount"
+								type="number"
+								placeholder="0.00"
+								bind:value={editFormData.quote_amount}
+								disabled={isSavingEdit}
+							/>
+						</div>
+						<div class="edit-field">
+							<Input
+								label="Actual Charged"
+								type="number"
+								placeholder="0.00"
+								bind:value={editFormData.actual_amount}
+								disabled={isSavingEdit}
+							/>
+						</div>
+					{:else}
+						<div class="info-row">
+							<span class="info-label">Quote</span>
+							<span class="info-value">{formatCurrency(ticket.quote_amount)}</span>
+						</div>
+						<div class="info-row">
+							<span class="info-label">Actual Charged</span>
+							<span class="info-value">{formatCurrency(ticket.actual_amount)}</span>
+						</div>
+					{/if}
 				</div>
 			</section>
 
@@ -665,32 +771,36 @@
 					{#if rushError}
 						<div class="inline-error">{rushError}</div>
 					{/if}
-					<div class="info-row" class:editable={isEditing}>
-						<span class="info-label">Promise Date</span>
-						<span class="info-value">
-							{formatDate(ticket.promise_date)}
-							{#if isEditing}
-								<svg class="edit-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-									<path
-										d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM11.189 6.25 9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064l6.286-6.286Z"
-									/>
-								</svg>
-							{/if}
-						</span>
-					</div>
-					<div class="info-row" class:editable={isEditing}>
-						<span class="info-label">Storage Location</span>
-						<span class="info-value">
-							{ticket.storage_location.name}
-							{#if isEditing}
-								<svg class="edit-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-									<path
-										d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM11.189 6.25 9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064l6.286-6.286Z"
-									/>
-								</svg>
-							{/if}
-						</span>
-					</div>
+					{#if internalEditMode}
+						<div class="edit-field">
+							<label class="edit-label" for="promise-date">Promise Date</label>
+							<input
+								type="date"
+								id="promise-date"
+								class="date-input"
+								bind:value={editFormData.promise_date}
+								disabled={isSavingEdit}
+							/>
+						</div>
+						<div class="edit-field">
+							<Select
+								label="Storage Location"
+								options={locationOptions}
+								bind:value={editFormData.storage_location_id}
+								placeholder={isLoadingLocations ? 'Loading...' : 'Select location'}
+								disabled={isSavingEdit || isLoadingLocations}
+							/>
+						</div>
+					{:else}
+						<div class="info-row">
+							<span class="info-label">Promise Date</span>
+							<span class="info-value">{formatDate(ticket.promise_date)}</span>
+						</div>
+						<div class="info-row">
+							<span class="info-label">Storage Location</span>
+							<span class="info-value">{ticket.storage_location.name}</span>
+						</div>
+					{/if}
 				</div>
 			</section>
 
@@ -824,18 +934,31 @@
 						<button class="print-error-dismiss" onclick={() => (printError = null)}>Dismiss</button>
 					</div>
 				{/if}
+				{#if editError}
+					<div class="print-error">
+						<span class="print-error-message">{editError}</span>
+						<button class="print-error-dismiss" onclick={() => (editError = null)}>Dismiss</button>
+					</div>
+				{/if}
 				<div class="actions-row">
-					{#if !isTicketClosed()}
-						<Button variant="secondary" onclick={handleEditTicket}>Edit Ticket</Button>
-					{/if}
-					<Button variant="secondary" onclick={handlePrintReceipt} loading={isPrintingReceipt}>
-						Print Receipt
-					</Button>
-					<Button variant="secondary" onclick={handlePrintTag} loading={isPrintingTag}>
-						Print Tag
-					</Button>
-					{#if canCloseTicket()}
-						<Button variant="primary" onclick={openCloseModal}>Close Ticket</Button>
+					{#if internalEditMode}
+						<Button variant="secondary" onclick={cancelEdit} disabled={isSavingEdit}>Cancel</Button>
+						<Button variant="primary" onclick={handleSaveEditClick} loading={isSavingEdit}>
+							Save Changes
+						</Button>
+					{:else}
+						{#if !isTicketClosed()}
+							<Button variant="secondary" onclick={handleEditTicket}>Edit Ticket</Button>
+						{/if}
+						<Button variant="secondary" onclick={handlePrintReceipt} loading={isPrintingReceipt}>
+							Print Receipt
+						</Button>
+						<Button variant="secondary" onclick={handlePrintTag} loading={isPrintingTag}>
+							Print Tag
+						</Button>
+						{#if canCloseTicket()}
+							<Button variant="primary" onclick={openCloseModal}>Close Ticket</Button>
+						{/if}
 					{/if}
 				</div>
 			</section>
@@ -1034,6 +1157,14 @@
 	onSuccess={handleUploadEmployeeSuccess}
 />
 
+<!-- Employee PIN Modal for Editing Ticket -->
+<EmployeeIdModal
+	open={showEditEmployeeModal}
+	title="Verify Employee"
+	onClose={() => (showEditEmployeeModal = false)}
+	onSuccess={handleEditEmployeeSuccess}
+/>
+
 <style>
 	.ticket-detail-content {
 		width: 600px;
@@ -1190,34 +1321,53 @@
 		line-height: 1.5;
 	}
 
-	/* Editable indicators */
-	.info-row.editable {
-		cursor: pointer;
-		border-radius: var(--radius-sm, 0.25rem);
-		margin-left: calc(-1 * var(--space-xs, 0.25rem));
-		margin-right: calc(-1 * var(--space-xs, 0.25rem));
-		padding-left: var(--space-xs, 0.25rem);
-		padding-right: var(--space-xs, 0.25rem);
-		transition: background-color var(--transition-fast, 150ms ease);
+	/* Edit mode fields */
+	.edit-field {
+		margin-bottom: var(--space-md, 1rem);
 	}
 
-	.info-row.editable:hover {
-		background-color: var(--color-bg-hover, rgba(0, 0, 0, 0.04));
+	.edit-field:last-child {
+		margin-bottom: 0;
 	}
 
-	.edit-icon {
-		width: 14px;
-		height: 14px;
-		margin-left: var(--space-xs, 0.25rem);
-		color: var(--color-primary, #1e40af);
-		opacity: 0.6;
-		vertical-align: middle;
-		flex-shrink: 0;
-		transition: opacity var(--transition-fast, 150ms ease);
+	.edit-label {
+		display: block;
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--color-text, #1e293b);
+		margin-bottom: var(--space-xs, 0.25rem);
 	}
 
-	.info-row.editable:hover .edit-icon {
-		opacity: 1;
+	.date-input {
+		width: 100%;
+		padding: var(--space-sm, 0.5rem) var(--space-md, 1rem);
+		font-size: 0.875rem;
+		font-family: inherit;
+		line-height: 1.5;
+		color: var(--color-text, #1e293b);
+		background-color: var(--color-surface, #ffffff);
+		border: 1px solid var(--color-border, #e2e8f0);
+		border-radius: var(--radius-md, 0.5rem);
+		transition:
+			border-color var(--transition-fast, 150ms ease),
+			box-shadow var(--transition-fast, 150ms ease);
+	}
+
+	.date-input:hover:not(:disabled) {
+		border-color: var(--color-primary-light, #3b82f6);
+	}
+
+	.date-input:focus {
+		outline: none;
+		border-color: var(--color-primary, #1e40af);
+		box-shadow: 0 0 0 3px rgba(30, 64, 175, 0.15);
+	}
+
+	.date-input:disabled {
+		background-color: var(--color-bg, #f8fafc);
+		color: var(--color-text-muted, #64748b);
+		cursor: not-allowed;
+		opacity: 0.7;
 	}
 
 	/* Section header with title and action */
