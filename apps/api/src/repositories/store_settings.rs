@@ -153,6 +153,42 @@ impl StoreSettingsRepository {
         let settings = Self::get_settings(pool).await?;
         Ok(settings.setup_complete)
     }
+
+    /// Check if setup is still required (not complete and deadline not passed).
+    pub async fn is_setup_required(pool: &PgPool) -> Result<bool, AppError> {
+        let result = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT NOT setup_complete AND setup_deadline > NOW()
+            FROM store_settings LIMIT 1
+            "#,
+        )
+        .fetch_one(pool)
+        .await?;
+
+        Ok(result)
+    }
+
+    /// Check if setup deadline has expired without setup being completed.
+    ///
+    /// Returns true if setup is incomplete AND deadline has passed.
+    pub async fn is_setup_expired(pool: &PgPool) -> Result<bool, AppError> {
+        let result = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT NOT setup_complete AND setup_deadline <= NOW()
+            FROM store_settings LIMIT 1
+            "#,
+        )
+        .fetch_one(pool)
+        .await?;
+
+        Ok(result)
+    }
+
+    /// Get the minimum PIN length requirement.
+    pub async fn get_min_pin_length(pool: &PgPool) -> Result<i32, AppError> {
+        let settings = Self::get_settings(pool).await?;
+        Ok(settings.min_pin_length)
+    }
 }
 
 #[cfg(test)]

@@ -20,6 +20,7 @@ pub mod codes {
     pub const PHOTO_LIMIT: &str = "PHOTO_LIMIT";
     pub const PRINT_REQUIRED: &str = "PRINT_REQUIRED";
     pub const RATE_LIMITED: &str = "RATE_LIMITED";
+    pub const SETUP_EXPIRED: &str = "SETUP_EXPIRED";
     pub const SERVER_ERROR: &str = "SERVER_ERROR";
 }
 
@@ -49,6 +50,8 @@ pub enum AppError {
     PrintRequired(String),
     /// Too many requests (429).
     RateLimited { message: String, retry_after: u64 },
+    /// Initial setup deadline has passed (403).
+    SetupExpired(String),
     /// Internal server error (500).
     ServerError(String),
 }
@@ -65,6 +68,7 @@ impl AppError {
             AppError::PhotoLimit(_) => codes::PHOTO_LIMIT,
             AppError::PrintRequired(_) => codes::PRINT_REQUIRED,
             AppError::RateLimited { .. } => codes::RATE_LIMITED,
+            AppError::SetupExpired(_) => codes::SETUP_EXPIRED,
             AppError::ServerError(_) => codes::SERVER_ERROR,
         }
     }
@@ -80,6 +84,7 @@ impl AppError {
             AppError::PhotoLimit(_) => StatusCode::UNPROCESSABLE_ENTITY,
             AppError::PrintRequired(_) => StatusCode::UNPROCESSABLE_ENTITY,
             AppError::RateLimited { .. } => StatusCode::TOO_MANY_REQUESTS,
+            AppError::SetupExpired(_) => StatusCode::FORBIDDEN,
             AppError::ServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -94,6 +99,7 @@ impl AppError {
             | AppError::Conflict(msg)
             | AppError::PhotoLimit(msg)
             | AppError::PrintRequired(msg)
+            | AppError::SetupExpired(msg)
             | AppError::ServerError(msg) => msg,
             AppError::RateLimited { message, .. } => message,
         }
@@ -153,6 +159,11 @@ impl AppError {
             message: message.into(),
             retry_after,
         }
+    }
+
+    /// Create a setup expired error.
+    pub fn setup_expired(message: impl Into<String>) -> Self {
+        AppError::SetupExpired(message.into())
     }
 }
 
@@ -355,6 +366,7 @@ mod tests {
         assert_eq!(AppError::photo_limit("").code(), codes::PHOTO_LIMIT);
         assert_eq!(AppError::print_required("").code(), codes::PRINT_REQUIRED);
         assert_eq!(AppError::rate_limited("", 60).code(), codes::RATE_LIMITED);
+        assert_eq!(AppError::setup_expired("").code(), codes::SETUP_EXPIRED);
         assert_eq!(AppError::server_error("").code(), codes::SERVER_ERROR);
     }
 
@@ -382,6 +394,10 @@ mod tests {
         assert_eq!(
             AppError::rate_limited("", 60).status_code(),
             StatusCode::TOO_MANY_REQUESTS
+        );
+        assert_eq!(
+            AppError::setup_expired("").status_code(),
+            StatusCode::FORBIDDEN
         );
         assert_eq!(
             AppError::server_error("").status_code(),
@@ -419,5 +435,17 @@ mod tests {
 
         let err2 = AppError::validation("Test");
         assert_eq!(err2.retry_after(), None);
+    }
+
+    #[tokio::test]
+    async fn test_setup_expired_error_response() {
+        let err = AppError::setup_expired("Initial setup deadline has passed");
+        let response = err.into_response();
+        let (status, body) = extract_error_response(response).await;
+
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(body.data.is_none());
+        assert_eq!(body.error.code, codes::SETUP_EXPIRED);
+        assert_eq!(body.error.message, "Initial setup deadline has passed");
     }
 }

@@ -51,6 +51,76 @@ pub fn hash_pin(pin: &str) -> Result<String, HashError> {
         .map_err(|e| HashError::HashFailed(e.to_string()))
 }
 
+/// Result of PIN validation.
+#[derive(Debug, Clone)]
+pub struct PinValidationResult {
+    /// Whether the PIN is valid.
+    pub valid: bool,
+    /// Error message if invalid.
+    pub error: Option<String>,
+}
+
+impl PinValidationResult {
+    /// Create a valid result.
+    pub fn valid() -> Self {
+        Self {
+            valid: true,
+            error: None,
+        }
+    }
+
+    /// Create an invalid result with an error message.
+    pub fn invalid(error: impl Into<String>) -> Self {
+        Self {
+            valid: false,
+            error: Some(error.into()),
+        }
+    }
+}
+
+/// Common weak PIN patterns that should be rejected.
+const WEAK_PATTERNS: &[&str] = &[
+    "000000", "111111", "222222", "333333", "444444", "555555", "666666", "777777", "888888",
+    "999999", "123456", "654321", "012345", "543210", "123123", "111222", "112233", "121212",
+    "abcdef", "qwerty", "password", "changeme",
+];
+
+/// Validate PIN complexity requirements.
+///
+/// Checks:
+/// - Minimum length
+/// - No weak patterns
+///
+/// # Arguments
+/// * `pin` - The PIN to validate
+/// * `min_length` - Minimum required length
+///
+/// # Returns
+/// A `PinValidationResult` indicating whether the PIN is valid.
+pub fn validate_pin_complexity(pin: &str, min_length: i32) -> PinValidationResult {
+    let min_length = min_length as usize;
+
+    // Check minimum length
+    if pin.len() < min_length {
+        return PinValidationResult::invalid(format!(
+            "PIN must be at least {} characters",
+            min_length
+        ));
+    }
+
+    // Check for weak patterns (case-insensitive)
+    let pin_lower = pin.to_lowercase();
+    for pattern in WEAK_PATTERNS {
+        if pin_lower == *pattern || pin_lower.starts_with(*pattern) {
+            return PinValidationResult::invalid(
+                "PIN is too common or easy to guess. Please choose a stronger PIN.",
+            );
+        }
+    }
+
+    PinValidationResult::valid()
+}
+
 /// Verify a PIN against a stored hash.
 ///
 /// Returns `true` if the PIN matches the hash, `false` otherwise.
@@ -158,5 +228,64 @@ mod tests {
 
         let err = HashError::VerifyFailed("test".to_string());
         assert_eq!(err.to_string(), "Verify failed: test");
+    }
+
+    // PIN complexity validation tests
+
+    #[test]
+    fn test_validate_pin_too_short() {
+        let result = validate_pin_complexity("12345", 6);
+        assert!(!result.valid);
+        assert!(result.error.unwrap().contains("at least 6 characters"));
+    }
+
+    #[test]
+    fn test_validate_pin_minimum_length() {
+        let result = validate_pin_complexity("123456", 6);
+        // Still invalid because 123456 is a weak pattern
+        assert!(!result.valid);
+    }
+
+    #[test]
+    fn test_validate_pin_weak_patterns() {
+        let weak_pins = vec![
+            "000000", "111111", "123456", "654321", "qwerty", "password", "changeme",
+        ];
+
+        for pin in weak_pins {
+            let result = validate_pin_complexity(pin, 6);
+            assert!(!result.valid, "PIN '{}' should be rejected as weak", pin);
+            assert!(result.error.unwrap().contains("too common"));
+        }
+    }
+
+    #[test]
+    fn test_validate_pin_valid() {
+        let valid_pins = vec!["abc123xyz", "mySecure9", "j3w3lry!", "Repair2024"];
+
+        for pin in valid_pins {
+            let result = validate_pin_complexity(pin, 6);
+            assert!(result.valid, "PIN '{}' should be valid", pin);
+            assert!(result.error.is_none());
+        }
+    }
+
+    #[test]
+    fn test_validate_pin_case_insensitive() {
+        // Weak patterns should be detected case-insensitively
+        let result = validate_pin_complexity("CHANGEME", 6);
+        assert!(!result.valid);
+
+        let result = validate_pin_complexity("PassWord", 6);
+        assert!(!result.valid);
+    }
+
+    #[test]
+    fn test_validate_pin_custom_min_length() {
+        let result = validate_pin_complexity("abc", 4);
+        assert!(!result.valid);
+
+        let result = validate_pin_complexity("abcd", 4);
+        assert!(result.valid);
     }
 }

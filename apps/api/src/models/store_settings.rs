@@ -22,12 +22,14 @@ pub struct StoreSettings {
     pub max_photos_per_ticket: i32,
     pub admin_pin_hash: String,
     pub setup_complete: bool,
+    pub setup_deadline: DateTime<Utc>,
+    pub min_pin_length: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
 /// Public view of store settings (without admin PIN hash).
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoreSettingsPublic {
     pub setting_id: Uuid,
     pub store_name: String,
@@ -38,12 +40,17 @@ pub struct StoreSettingsPublic {
     pub currency: String,
     pub max_photos_per_ticket: i32,
     pub setup_complete: bool,
+    /// Whether initial setup is still required (setup incomplete and deadline not passed).
+    pub setup_required: bool,
+    pub min_pin_length: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
 impl From<StoreSettings> for StoreSettingsPublic {
     fn from(settings: StoreSettings) -> Self {
+        // Setup is required if not complete and deadline hasn't passed
+        let setup_required = !settings.setup_complete && Utc::now() < settings.setup_deadline;
         Self {
             setting_id: settings.setting_id,
             store_name: settings.store_name,
@@ -54,6 +61,8 @@ impl From<StoreSettings> for StoreSettingsPublic {
             currency: settings.currency,
             max_photos_per_ticket: settings.max_photos_per_ticket,
             setup_complete: settings.setup_complete,
+            setup_required,
+            min_pin_length: settings.min_pin_length,
             created_at: settings.created_at,
             updated_at: settings.updated_at,
         }
@@ -125,6 +134,8 @@ mod tests {
             currency: "USD".to_string(),
             max_photos_per_ticket: 10,
             setup_complete: false,
+            setup_required: true,
+            min_pin_length: 6,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -132,7 +143,86 @@ mod tests {
         let json = serde_json::to_string(&public).unwrap();
         assert!(json.contains("store_name"));
         assert!(json.contains("ticket_prefix"));
+        assert!(json.contains("setup_required"));
+        assert!(json.contains("min_pin_length"));
         // Should NOT contain admin_pin_hash
         assert!(!json.contains("admin_pin_hash"));
+    }
+
+    #[test]
+    fn test_store_settings_to_public_conversion() {
+        // Test with setup incomplete and deadline in the future
+        let settings = StoreSettings {
+            setting_id: Uuid::nil(),
+            store_name: "Test".to_string(),
+            store_phone: None,
+            store_address: None,
+            ticket_prefix: "JR".to_string(),
+            next_ticket_number: 1,
+            currency: "USD".to_string(),
+            max_photos_per_ticket: 10,
+            admin_pin_hash: "hash".to_string(),
+            setup_complete: false,
+            setup_deadline: Utc::now() + chrono::Duration::hours(24),
+            min_pin_length: 6,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        let public = StoreSettingsPublic::from(settings);
+        assert!(!public.setup_complete);
+        assert!(public.setup_required);
+        assert_eq!(public.min_pin_length, 6);
+    }
+
+    #[test]
+    fn test_store_settings_to_public_setup_expired() {
+        // Test with setup incomplete and deadline in the past
+        let settings = StoreSettings {
+            setting_id: Uuid::nil(),
+            store_name: "Test".to_string(),
+            store_phone: None,
+            store_address: None,
+            ticket_prefix: "JR".to_string(),
+            next_ticket_number: 1,
+            currency: "USD".to_string(),
+            max_photos_per_ticket: 10,
+            admin_pin_hash: "hash".to_string(),
+            setup_complete: false,
+            setup_deadline: Utc::now() - chrono::Duration::hours(1),
+            min_pin_length: 6,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        let public = StoreSettingsPublic::from(settings);
+        assert!(!public.setup_complete);
+        // Setup is NOT required because deadline has passed
+        assert!(!public.setup_required);
+    }
+
+    #[test]
+    fn test_store_settings_to_public_setup_complete() {
+        // Test with setup complete
+        let settings = StoreSettings {
+            setting_id: Uuid::nil(),
+            store_name: "Test".to_string(),
+            store_phone: None,
+            store_address: None,
+            ticket_prefix: "JR".to_string(),
+            next_ticket_number: 1,
+            currency: "USD".to_string(),
+            max_photos_per_ticket: 10,
+            admin_pin_hash: "hash".to_string(),
+            setup_complete: true,
+            setup_deadline: Utc::now() + chrono::Duration::hours(24),
+            min_pin_length: 6,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        let public = StoreSettingsPublic::from(settings);
+        assert!(public.setup_complete);
+        assert!(!public.setup_required);
     }
 }

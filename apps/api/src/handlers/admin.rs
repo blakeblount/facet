@@ -9,6 +9,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
+use crate::auth::validate_pin_complexity;
 use crate::error::AppError;
 use crate::middleware::extract_client_ip;
 use crate::models::store_settings::StoreSettingsPublic;
@@ -61,7 +62,7 @@ pub struct AdminSetupResponse {
 /// POST /api/v1/admin/setup - Initial admin setup (force password change).
 ///
 /// This endpoint is used for first-time setup to change the default admin PIN.
-/// It can only be called once (when setup_complete is false).
+/// It can only be called once (when setup_complete is false) and within the setup deadline.
 ///
 /// # Request Body
 /// - `current_pin`: The current PIN (default: "changeme")
@@ -69,8 +70,9 @@ pub struct AdminSetupResponse {
 ///
 /// # Errors
 /// - FORBIDDEN: If setup is already complete
+/// - SETUP_EXPIRED: If setup deadline has passed
 /// - INVALID_PIN: If the current PIN is incorrect
-/// - VALIDATION_ERROR: If the new PIN is empty
+/// - VALIDATION_ERROR: If the new PIN is empty or too weak
 /// - RATE_LIMITED: If too many attempts from the same IP
 pub async fn admin_setup(
     State(state): State<AppState>,
@@ -95,17 +97,39 @@ pub async fn admin_setup(
         return Err(AppError::forbidden("Setup has already been completed"));
     }
 
+    // Check if setup deadline has expired
+    let is_expired = StoreSettingsRepository::is_setup_expired(&state.db).await?;
+    if is_expired {
+        tracing::warn!("Setup attempted after deadline expiration");
+        return Err(AppError::setup_expired(
+            "Initial setup deadline has passed. Please contact system administrator.",
+        ));
+    }
+
     // Verify the current PIN
     let is_valid = StoreSettingsRepository::verify_admin_pin(&state.db, &body.current_pin).await?;
     if !is_valid {
         // Record failure for exponential backoff
         state.rate_limit.record_failure(client_ip).await;
+        // Log default PIN usage attempt
+        tracing::warn!("Invalid PIN attempt during setup - setup incomplete");
         return Err(AppError::invalid_pin("Invalid current PIN"));
     }
 
-    // Validate new PIN
+    // Validate new PIN - check if empty first
     if body.new_pin.is_empty() {
         return Err(AppError::validation("New PIN is required"));
+    }
+
+    // Validate new PIN complexity
+    let min_pin_length = StoreSettingsRepository::get_min_pin_length(&state.db).await?;
+    let validation_result = validate_pin_complexity(&body.new_pin, min_pin_length);
+    if !validation_result.valid {
+        return Err(AppError::validation(
+            validation_result
+                .error
+                .unwrap_or_else(|| "Invalid PIN".to_string()),
+        ));
     }
 
     // Change the admin PIN
@@ -170,6 +194,7 @@ pub struct AdminVerifyResponse {
 ///
 /// # Errors
 /// - INVALID_PIN: If the PIN is incorrect
+/// - SETUP_EXPIRED: If setup deadline has passed without completing setup
 /// - RATE_LIMITED: If too many attempts from the same IP
 pub async fn verify_admin(
     State(state): State<AppState>,
@@ -188,12 +213,27 @@ pub async fn verify_admin(
         ));
     }
 
+    // Check if setup deadline has expired without completion
+    let is_expired = StoreSettingsRepository::is_setup_expired(&state.db).await?;
+    if is_expired {
+        tracing::warn!("Admin verification attempted after setup deadline expiration");
+        return Err(AppError::setup_expired(
+            "Initial setup deadline has passed. Please contact system administrator.",
+        ));
+    }
+
     let is_valid = StoreSettingsRepository::verify_admin_pin(&state.db, &body.pin).await?;
 
     if !is_valid {
         // Record failure for exponential backoff
         state.rate_limit.record_failure(client_ip).await;
         return Err(AppError::invalid_pin("Invalid admin PIN"));
+    }
+
+    // Log warning if using default PIN (setup not complete)
+    let is_complete = StoreSettingsRepository::is_setup_complete(&state.db).await?;
+    if !is_complete {
+        tracing::warn!("Admin operation attempted with default PIN - setup incomplete");
     }
 
     // Record success to reset backoff
@@ -220,7 +260,7 @@ pub async fn verify_admin(
 ///
 /// # Errors
 /// - INVALID_PIN: If the X-Admin-PIN header is missing or incorrect
-/// - VALIDATION_ERROR: If the new PIN is empty
+/// - VALIDATION_ERROR: If the new PIN is empty or too weak
 pub async fn change_pin(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -229,9 +269,20 @@ pub async fn change_pin(
     // Verify the current admin PIN
     verify_admin_pin_header(&state, &headers).await?;
 
-    // Validate new PIN
+    // Validate new PIN - check if empty first
     if body.new_pin.is_empty() {
         return Err(AppError::validation("New PIN is required"));
+    }
+
+    // Validate new PIN complexity
+    let min_pin_length = StoreSettingsRepository::get_min_pin_length(&state.db).await?;
+    let validation_result = validate_pin_complexity(&body.new_pin, min_pin_length);
+    if !validation_result.valid {
+        return Err(AppError::validation(
+            validation_result
+                .error
+                .unwrap_or_else(|| "Invalid PIN".to_string()),
+        ));
     }
 
     // Change the admin PIN
@@ -280,6 +331,8 @@ mod tests {
                 currency: "USD".to_string(),
                 max_photos_per_ticket: 10,
                 setup_complete: true,
+                setup_required: false,
+                min_pin_length: 6,
                 created_at: chrono::Utc::now(),
                 updated_at: chrono::Utc::now(),
             },
@@ -369,6 +422,8 @@ mod tests {
                 currency: "USD".to_string(),
                 max_photos_per_ticket: 10,
                 setup_complete: true,
+                setup_required: false,
+                min_pin_length: 6,
                 created_at: chrono::Utc::now(),
                 updated_at: chrono::Utc::now(),
             },
