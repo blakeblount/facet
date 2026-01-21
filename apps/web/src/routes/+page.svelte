@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { SvelteMap } from 'svelte/reactivity';
-	import type { PageData } from './$types';
-	import { invalidateAll } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import Button from '$lib/components/Button.svelte';
 	import StatusLane from '$lib/components/StatusLane.svelte';
 	import TicketCard from '$lib/components/TicketCard.svelte';
@@ -11,12 +10,44 @@
 	import {
 		changeTicketStatus,
 		setCurrentEmployee,
+		hasEmployeeSession,
+		getQueue,
 		type TicketStatus,
 		type QueueTicket
 	} from '$lib/services/api';
-	import type { VerifyPinResponse, EmployeeInfo } from '$lib/types/api';
+	import type { VerifyPinResponse, EmployeeInfo, GetQueueResponse } from '$lib/types/api';
 
-	let { data }: { data: PageData } = $props();
+	// Queue data state - fetched client-side after authentication
+	let queueData = $state<GetQueueResponse | null>(null);
+	let queueError = $state<string | null>(null);
+	let queueLoading = $state(false);
+
+	// Fetch queue data from API (requires employee session)
+	async function fetchQueue() {
+		if (!hasEmployeeSession()) {
+			// Not authenticated - show empty state
+			queueData = null;
+			return;
+		}
+
+		queueLoading = true;
+		queueError = null;
+
+		try {
+			queueData = await getQueue();
+		} catch (err) {
+			console.error('Failed to load queue:', err);
+			queueError = err instanceof Error ? err.message : 'Failed to load queue';
+			queueData = null;
+		} finally {
+			queueLoading = false;
+		}
+	}
+
+	// Fetch queue on mount
+	onMount(() => {
+		fetchQueue();
+	});
 
 	// Drag state
 	let draggingTicketId = $state<string | null>(null);
@@ -46,14 +77,14 @@
 
 	// Computed lanes that apply optimistic moves
 	const lanes = $derived.by(() => {
-		if (!data.queue) return null;
+		if (!queueData) return null;
 
 		// Deep clone the lanes
 		const result = {
-			intake: { count: 0, tickets: [...data.queue.lanes.intake.tickets] },
-			in_progress: { count: 0, tickets: [...data.queue.lanes.in_progress.tickets] },
-			waiting_on_parts: { count: 0, tickets: [...data.queue.lanes.waiting_on_parts.tickets] },
-			ready_for_pickup: { count: 0, tickets: [...data.queue.lanes.ready_for_pickup.tickets] }
+			intake: { count: 0, tickets: [...queueData.lanes.intake.tickets] },
+			in_progress: { count: 0, tickets: [...queueData.lanes.in_progress.tickets] },
+			waiting_on_parts: { count: 0, tickets: [...queueData.lanes.waiting_on_parts.tickets] },
+			ready_for_pickup: { count: 0, tickets: [...queueData.lanes.ready_for_pickup.tickets] }
 		};
 
 		// Apply optimistic moves
@@ -96,7 +127,7 @@
 	async function handleIntakeSuccess(_ticketId: string, _friendlyCode: string) {
 		showIntakeModal = false;
 		// Refresh the workboard to show the new ticket
-		await invalidateAll();
+		await fetchQueue();
 	}
 
 	function handleDragStart(ticketId: string) {
@@ -119,8 +150,8 @@
 	}
 
 	function findTicketStatus(ticketId: string): TicketStatus | null {
-		if (!data.queue) return null;
-		const laneEntries = Object.entries(data.queue.lanes) as [
+		if (!queueData) return null;
+		const laneEntries = Object.entries(queueData.lanes) as [
 			TicketStatus,
 			{ tickets: QueueTicket[] }
 		][];
@@ -169,7 +200,7 @@
 		try {
 			await changeTicketStatus(ticketId, newStatus);
 			// Success - refresh data from server
-			await invalidateAll();
+			await fetchQueue();
 		} catch (err) {
 			// Revert optimistic update
 			console.error('Failed to update ticket status:', err);
@@ -200,12 +231,12 @@
 
 	async function handleTicketClosed() {
 		// Refresh the workboard to reflect the closed ticket
-		await invalidateAll();
+		await fetchQueue();
 	}
 
 	async function handleTicketUpdated() {
 		// Refresh the workboard to reflect ticket changes (e.g., rush status)
-		await invalidateAll();
+		await fetchQueue();
 	}
 
 	// Helper to determine if lane is a valid drop target
@@ -227,9 +258,19 @@
 		</div>
 	</div>
 
-	{#if data.error}
+	{#if queueLoading}
+		<div class="loading-message">
+			<p>Loading queue...</p>
+		</div>
+	{:else if queueError}
 		<div class="error-message">
-			<p>Failed to load queue: {data.error}</p>
+			<p>Failed to load queue: {queueError}</p>
+			<button onclick={() => fetchQueue()}>Retry</button>
+		</div>
+	{:else if !hasEmployeeSession()}
+		<div class="auth-required-message">
+			<p>Please log in to view the workboard.</p>
+			<p class="auth-hint">Click "New Ticket" to authenticate with your employee PIN.</p>
 		</div>
 	{:else if lanes}
 		{#if statusUpdateError}
@@ -426,6 +467,30 @@
 		padding: var(--space-xl);
 		text-align: center;
 		color: var(--color-text-muted);
+	}
+
+	.loading-message {
+		padding: var(--space-xl);
+		text-align: center;
+		color: var(--color-text-muted);
+	}
+
+	.auth-required-message {
+		padding: var(--space-xl);
+		text-align: center;
+		color: var(--color-text-muted);
+		background-color: var(--color-surface-secondary);
+		border-radius: var(--radius-md);
+		margin: var(--space-lg) auto;
+		max-width: 400px;
+	}
+
+	.auth-required-message p {
+		margin-bottom: var(--space-sm);
+	}
+
+	.auth-hint {
+		font-size: 0.875rem;
 	}
 
 	.lanes-container {

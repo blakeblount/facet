@@ -3,48 +3,29 @@ import type { GetQueueResponse } from '$lib/types/api';
 
 /**
  * Server-side load function for the workboard page.
- * Fetches the queue data from the API.
+ *
+ * The queue endpoint requires employee authentication, which is stored client-side.
+ * Server-side rendering cannot access the auth token, so we return null here
+ * and let the client fetch the queue data after authentication.
+ *
+ * This enables:
+ * - Fast initial page load (no blocking API call)
+ * - Proper auth flow (client fetches after employee login)
+ * - Better UX (loading state shown while fetching)
  */
-export const load: PageServerLoad = async ({ fetch }) => {
-	try {
-		// In production, this would call the actual API
-		// For now, we return a placeholder structure that matches the API types
-		const response = await fetch('/api/v1/queue');
-
-		if (!response.ok) {
-			return {
-				queue: null,
-				error: `Failed to load queue: ${response.status}`
-			};
+export const load: PageServerLoad = async () => {
+	// Queue data requires authentication - fetched client-side
+	const emptyQueue: GetQueueResponse = {
+		lanes: {
+			intake: { count: 0, tickets: [] },
+			in_progress: { count: 0, tickets: [] },
+			waiting_on_parts: { count: 0, tickets: [] },
+			ready_for_pickup: { count: 0, tickets: [] }
 		}
+	};
 
-		const json = await response.json();
-
-		if (json.error) {
-			return {
-				queue: null,
-				error: json.error.message
-			};
-		}
-
-		return {
-			queue: json.data as GetQueueResponse,
-			error: null
-		};
-	} catch {
-		// During development without the API running, return empty queue
-		const emptyQueue: GetQueueResponse = {
-			lanes: {
-				intake: { count: 0, tickets: [] },
-				in_progress: { count: 0, tickets: [] },
-				waiting_on_parts: { count: 0, tickets: [] },
-				ready_for_pickup: { count: 0, tickets: [] }
-			}
-		};
-
-		return {
-			queue: emptyQueue,
-			error: null
-		};
-	}
+	return {
+		queue: emptyQueue,
+		error: null
+	};
 };

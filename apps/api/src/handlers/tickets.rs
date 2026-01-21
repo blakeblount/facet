@@ -1188,7 +1188,15 @@ pub struct GetQueueResponse {
 /// Each lane is sorted by rush first, then FIFO (oldest first).
 /// Excludes closed and archived tickets.
 /// Includes `is_overdue` flag for visual indicator.
-pub async fn get_queue(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
+///
+/// Requires employee authentication (X-Employee-Session header).
+pub async fn get_queue(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    // Require valid employee session - queue contains customer data
+    let _employee = extract_employee_from_session(&state, &headers).await?;
+
     // Use the repository method which handles grouping and sorting
     let queue = TicketRepository::get_queue(&state.db, None).await?;
 
