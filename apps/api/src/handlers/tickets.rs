@@ -1189,14 +1189,9 @@ pub struct GetQueueResponse {
 /// Excludes closed and archived tickets.
 /// Includes `is_overdue` flag for visual indicator.
 ///
-/// Requires employee authentication (X-Employee-Session header).
-pub async fn get_queue(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<impl IntoResponse, AppError> {
-    // Require valid employee session - queue contains customer data
-    let _employee = extract_employee_from_session(&state, &headers).await?;
-
+/// Public endpoint - no authentication required for viewing the workboard.
+/// Operations (status changes, ticket creation) still require PIN authentication.
+pub async fn get_queue(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
     // Use the repository method which handles grouping and sorting
     let queue = TicketRepository::get_queue(&state.db, None).await?;
 
