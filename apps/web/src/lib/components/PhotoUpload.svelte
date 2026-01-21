@@ -225,14 +225,19 @@
 	class:has-error={!!displayError}
 	class:is-disabled={disabled}
 >
-	{#if label}
-		<span class="upload-label">
-			{label}
-			{#if required}
-				<span class="required-indicator" aria-hidden="true">*</span>
-			{/if}
+	<div class="upload-header">
+		{#if label}
+			<span class="upload-label">
+				{label}
+				{#if required}
+					<span class="required-indicator" aria-hidden="true">*</span>
+				{/if}
+			</span>
+		{/if}
+		<span class="photo-count" aria-live="polite">
+			{photoFiles.length} of {maxFiles} photos
 		</span>
-	{/if}
+	</div>
 
 	<input
 		bind:this={fileInput}
@@ -337,10 +342,22 @@
 		gap: var(--space-sm, 0.5rem);
 	}
 
+	.upload-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: var(--space-sm, 0.5rem);
+	}
+
 	.upload-label {
 		font-size: 0.875rem;
 		font-weight: 500;
 		color: var(--color-text, #1e293b);
+	}
+
+	.photo-count {
+		font-size: 0.75rem;
+		color: var(--color-text-muted, #64748b);
 	}
 
 	.required-indicator {
