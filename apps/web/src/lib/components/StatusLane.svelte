@@ -151,6 +151,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+		gap: var(--space-sm, 0.5rem);
 		padding: var(--space-md, 1rem);
 		border-bottom: 2px solid var(--color-border, #e2e8f0);
 		flex-shrink: 0;
