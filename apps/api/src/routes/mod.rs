@@ -13,14 +13,17 @@
 mod health;
 
 use axum::{
+    middleware,
     routing::{delete, get, post, put},
     Router,
 };
 use sqlx::postgres::PgPool;
+use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::services::ServeDir;
 
+use crate::config::{DEFAULT_MAX_BODY_SIZE, DEFAULT_MAX_PHOTO_SIZE};
 use crate::handlers;
-use crate::middleware::RateLimitState;
+use crate::middleware::{json_payload_error, RateLimitState};
 
 pub use health::health_check;
 
@@ -59,12 +62,43 @@ impl AppState {
     }
 }
 
+/// Configuration for request body size limits.
+#[derive(Debug, Clone)]
+pub struct BodyLimitConfig {
+    /// Maximum body size for JSON endpoints (default: 1MB)
+    pub max_body_size: usize,
+    /// Maximum body size for photo uploads (default: 10MB)
+    pub max_photo_size: usize,
+}
+
+impl Default for BodyLimitConfig {
+    fn default() -> Self {
+        Self {
+            max_body_size: DEFAULT_MAX_BODY_SIZE,
+            max_photo_size: DEFAULT_MAX_PHOTO_SIZE,
+        }
+    }
+}
+
 /// Build the API router with all routes.
 ///
 /// The router is configured with shared application state containing
 /// the database pool.
 pub fn api_router(state: AppState) -> Router {
-    // Ticket routes
+    api_router_with_limits(state, BodyLimitConfig::default())
+}
+
+/// Build the API router with custom body size limits.
+///
+/// The router is configured with shared application state and custom
+/// request body size limits.
+pub fn api_router_with_limits(state: AppState, limits: BodyLimitConfig) -> Router {
+    // Photo upload route with larger limit
+    let photo_upload_route = Router::new()
+        .route("/", post(handlers::upload_photo))
+        .layer(RequestBodyLimitLayer::new(limits.max_photo_size));
+
+    // Ticket routes (without photo upload, which has its own limit)
     let tickets_routes = Router::new()
         .route(
             "/",
@@ -80,7 +114,7 @@ pub fn api_router(state: AppState) -> Router {
         .route("/:ticket_id/close", post(handlers::close_ticket))
         .route("/:ticket_id/rush", post(handlers::toggle_rush))
         .route("/:ticket_id/notes", post(handlers::add_note))
-        .route("/:ticket_id/photos", post(handlers::upload_photo))
+        .nest("/:ticket_id/photos", photo_upload_route)
         .route(
             "/:ticket_id/photos/:photo_id",
             delete(handlers::delete_photo),
@@ -127,7 +161,7 @@ pub fn api_router(state: AppState) -> Router {
         )
         .route("/:location_id", put(handlers::update_location));
 
-    // API v1 routes
+    // API v1 routes with default body limit
     let api_v1 = Router::new()
         .nest("/tickets", tickets_routes)
         .nest("/queue", queue_route)
@@ -135,7 +169,11 @@ pub fn api_router(state: AppState) -> Router {
         .nest("/customers", customers_routes)
         .nest("/admin", admin_routes)
         .nest("/settings", settings_routes)
-        .nest("/locations", locations_routes);
+        .nest("/locations", locations_routes)
+        // Apply default body size limit to all API routes (except photo upload which has its own)
+        .layer(RequestBodyLimitLayer::new(limits.max_body_size))
+        // Convert 413 responses to JSON format
+        .layer(middleware::from_fn(json_payload_error));
 
     Router::new()
         .route("/health", axum::routing::get(health::health_check))

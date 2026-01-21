@@ -4,6 +4,12 @@ use crate::storage::StorageConfig;
 use std::env;
 use std::net::SocketAddr;
 
+/// Default maximum body size for JSON endpoints (1MB).
+pub const DEFAULT_MAX_BODY_SIZE: usize = 1024 * 1024;
+
+/// Default maximum body size for photo uploads (10MB).
+pub const DEFAULT_MAX_PHOTO_SIZE: usize = 10 * 1024 * 1024;
+
 /// Application configuration loaded from environment variables.
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -24,6 +30,12 @@ pub struct Config {
 
     /// Log level filter
     pub log_filter: String,
+
+    /// Maximum body size for JSON endpoints (bytes)
+    pub max_body_size: usize,
+
+    /// Maximum body size for photo uploads (bytes)
+    pub max_photo_size: usize,
 }
 
 impl Config {
@@ -41,6 +53,8 @@ impl Config {
     /// - `S3_SECRET_KEY`: S3 secret key
     /// - `CORS_ORIGINS`: Comma-separated allowed origins (default: *)
     /// - `RUST_LOG`: Log level filter (default: api=debug,tower_http=debug)
+    /// - `MAX_BODY_SIZE`: Maximum body size for JSON endpoints in bytes (default: 1MB)
+    /// - `MAX_PHOTO_SIZE`: Maximum body size for photo uploads in bytes (default: 10MB)
     pub fn from_env() -> Result<Self, ConfigError> {
         let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
         let port = env::var("PORT")
@@ -67,6 +81,16 @@ impl Config {
         let log_filter =
             env::var("RUST_LOG").unwrap_or_else(|_| "api=debug,tower_http=debug".to_string());
 
+        let max_body_size = env::var("MAX_BODY_SIZE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(DEFAULT_MAX_BODY_SIZE);
+
+        let max_photo_size = env::var("MAX_PHOTO_SIZE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(DEFAULT_MAX_PHOTO_SIZE);
+
         Ok(Config {
             server_addr,
             database_url,
@@ -76,6 +100,8 @@ impl Config {
             s3_secret_key: env::var("S3_SECRET_KEY").ok(),
             cors_origins,
             log_filter,
+            max_body_size,
+            max_photo_size,
         })
     }
 
@@ -101,6 +127,16 @@ impl Config {
         let log_filter =
             env::var("RUST_LOG").unwrap_or_else(|_| "api=debug,tower_http=debug".to_string());
 
+        let max_body_size = env::var("MAX_BODY_SIZE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(DEFAULT_MAX_BODY_SIZE);
+
+        let max_photo_size = env::var("MAX_PHOTO_SIZE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(DEFAULT_MAX_PHOTO_SIZE);
+
         Config {
             server_addr,
             database_url: env::var("DATABASE_URL")
@@ -111,6 +147,8 @@ impl Config {
             s3_secret_key: env::var("S3_SECRET_KEY").ok(),
             cors_origins,
             log_filter,
+            max_body_size,
+            max_photo_size,
         }
     }
 
@@ -224,5 +262,26 @@ mod tests {
 
         // Should use the bucket from config
         assert_eq!(storage_config.bucket, config.s3_bucket);
+    }
+
+    #[test]
+    fn test_default_body_size_limits() {
+        let config = Config::from_env_or_defaults();
+
+        // Default max body size should be 1MB
+        assert_eq!(config.max_body_size, DEFAULT_MAX_BODY_SIZE);
+        assert_eq!(config.max_body_size, 1024 * 1024);
+
+        // Default max photo size should be 10MB
+        assert_eq!(config.max_photo_size, DEFAULT_MAX_PHOTO_SIZE);
+        assert_eq!(config.max_photo_size, 10 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_body_size_constants() {
+        // Verify constants are reasonable values
+        assert_eq!(DEFAULT_MAX_BODY_SIZE, 1024 * 1024); // 1MB
+        assert_eq!(DEFAULT_MAX_PHOTO_SIZE, 10 * 1024 * 1024); // 10MB
+        assert!(DEFAULT_MAX_PHOTO_SIZE > DEFAULT_MAX_BODY_SIZE);
     }
 }

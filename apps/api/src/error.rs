@@ -22,6 +22,7 @@ pub mod codes {
     pub const PRINT_REQUIRED: &str = "PRINT_REQUIRED";
     pub const RATE_LIMITED: &str = "RATE_LIMITED";
     pub const SETUP_EXPIRED: &str = "SETUP_EXPIRED";
+    pub const PAYLOAD_TOO_LARGE: &str = "PAYLOAD_TOO_LARGE";
     pub const SERVER_ERROR: &str = "SERVER_ERROR";
 }
 
@@ -47,6 +48,8 @@ pub enum AppError {
     NotFound(String),
     /// Conflict (409).
     Conflict(String),
+    /// Request body too large (413).
+    PayloadTooLarge(String),
     /// Max photos per ticket reached (422).
     PhotoLimit(String),
     /// Cannot complete action until print succeeds (422).
@@ -69,6 +72,7 @@ impl AppError {
             AppError::Forbidden(_) => codes::FORBIDDEN,
             AppError::NotFound(_) => codes::NOT_FOUND,
             AppError::Conflict(_) => codes::CONFLICT,
+            AppError::PayloadTooLarge(_) => codes::PAYLOAD_TOO_LARGE,
             AppError::PhotoLimit(_) => codes::PHOTO_LIMIT,
             AppError::PrintRequired(_) => codes::PRINT_REQUIRED,
             AppError::RateLimited { .. } => codes::RATE_LIMITED,
@@ -86,6 +90,7 @@ impl AppError {
             AppError::Forbidden(_) => StatusCode::FORBIDDEN,
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Conflict(_) => StatusCode::CONFLICT,
+            AppError::PayloadTooLarge(_) => StatusCode::PAYLOAD_TOO_LARGE,
             AppError::PhotoLimit(_) => StatusCode::UNPROCESSABLE_ENTITY,
             AppError::PrintRequired(_) => StatusCode::UNPROCESSABLE_ENTITY,
             AppError::RateLimited { .. } => StatusCode::TOO_MANY_REQUESTS,
@@ -103,6 +108,7 @@ impl AppError {
             | AppError::Forbidden(msg)
             | AppError::NotFound(msg)
             | AppError::Conflict(msg)
+            | AppError::PayloadTooLarge(msg)
             | AppError::PhotoLimit(msg)
             | AppError::PrintRequired(msg)
             | AppError::SetupExpired(msg)
@@ -157,6 +163,11 @@ impl AppError {
     /// Create a print required error.
     pub fn print_required(message: impl Into<String>) -> Self {
         AppError::PrintRequired(message.into())
+    }
+
+    /// Create a payload too large error.
+    pub fn payload_too_large(message: impl Into<String>) -> Self {
+        AppError::PayloadTooLarge(message.into())
     }
 
     /// Create a server error.
@@ -374,6 +385,10 @@ mod tests {
         assert_eq!(AppError::forbidden("").code(), codes::FORBIDDEN);
         assert_eq!(AppError::not_found("").code(), codes::NOT_FOUND);
         assert_eq!(AppError::conflict("").code(), codes::CONFLICT);
+        assert_eq!(
+            AppError::payload_too_large("").code(),
+            codes::PAYLOAD_TOO_LARGE
+        );
         assert_eq!(AppError::photo_limit("").code(), codes::PHOTO_LIMIT);
         assert_eq!(AppError::print_required("").code(), codes::PRINT_REQUIRED);
         assert_eq!(AppError::rate_limited("", 60).code(), codes::RATE_LIMITED);
@@ -394,6 +409,10 @@ mod tests {
         assert_eq!(AppError::forbidden("").status_code(), StatusCode::FORBIDDEN);
         assert_eq!(AppError::not_found("").status_code(), StatusCode::NOT_FOUND);
         assert_eq!(AppError::conflict("").status_code(), StatusCode::CONFLICT);
+        assert_eq!(
+            AppError::payload_too_large("").status_code(),
+            StatusCode::PAYLOAD_TOO_LARGE
+        );
         assert_eq!(
             AppError::photo_limit("").status_code(),
             StatusCode::UNPROCESSABLE_ENTITY
@@ -458,5 +477,20 @@ mod tests {
         assert!(body.data.is_none());
         assert_eq!(body.error.code, codes::SETUP_EXPIRED);
         assert_eq!(body.error.message, "Initial setup deadline has passed");
+    }
+
+    #[tokio::test]
+    async fn test_payload_too_large_error_response() {
+        let err = AppError::payload_too_large("Request body exceeds maximum size of 1MB");
+        let response = err.into_response();
+        let (status, body) = extract_error_response(response).await;
+
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(body.data.is_none());
+        assert_eq!(body.error.code, codes::PAYLOAD_TOO_LARGE);
+        assert_eq!(
+            body.error.message,
+            "Request body exceeds maximum size of 1MB"
+        );
     }
 }

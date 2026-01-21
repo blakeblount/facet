@@ -51,6 +51,7 @@ mod tests {
     use tower::ServiceExt;
 
     fn test_config_with_origins(origins: Vec<&str>) -> Config {
+        use crate::config::{DEFAULT_MAX_BODY_SIZE, DEFAULT_MAX_PHOTO_SIZE};
         Config {
             server_addr: "127.0.0.1:3001".parse().unwrap(),
             database_url: "postgres://test".to_string(),
@@ -60,6 +61,8 @@ mod tests {
             s3_secret_key: None,
             cors_origins: origins.into_iter().map(String::from).collect(),
             log_filter: "".to_string(),
+            max_body_size: DEFAULT_MAX_BODY_SIZE,
+            max_photo_size: DEFAULT_MAX_PHOTO_SIZE,
         }
     }
 

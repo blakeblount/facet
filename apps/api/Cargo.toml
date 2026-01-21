@@ -12,7 +12,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono", "rust_decimal"] }
 rust_decimal = { version = "1", features = ["serde", "serde-with-str"] }
-tower-http = { version = "0.5", features = ["cors", "trace", "fs"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "fs", "limit"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dotenvy = "0.15"

@@ -1,5 +1,8 @@
 use api::repositories::AdminSessionRepository;
-use api::{api_router, build_cors_layer, create_pool, test_connection, AppState, Config, DbConfig};
+use api::{
+    api_router_with_limits, build_cors_layer, create_pool, test_connection, AppState,
+    BodyLimitConfig, Config, DbConfig,
+};
 use std::net::SocketAddr;
 use tokio::signal;
 use tower_http::trace::TraceLayer;
@@ -51,8 +54,20 @@ async fn main() {
     // Build CORS layer
     let cors = build_cors_layer(&config);
 
+    // Configure body size limits
+    let body_limits = BodyLimitConfig {
+        max_body_size: config.max_body_size,
+        max_photo_size: config.max_photo_size,
+    };
+
+    tracing::info!(
+        "Request body limits: {}KB default, {}MB for photos",
+        config.max_body_size / 1024,
+        config.max_photo_size / (1024 * 1024)
+    );
+
     // Build router with middleware
-    let app = api_router(state)
+    let app = api_router_with_limits(state, body_limits)
         .layer(TraceLayer::new_for_http())
         .layer(cors);
 
