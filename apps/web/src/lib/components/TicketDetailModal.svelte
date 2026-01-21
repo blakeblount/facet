@@ -898,9 +898,10 @@
 	onkeydown={handleLightboxKeydown}
 >
 	{#if lightboxPhoto}
-		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<div
 			class="lightbox-inner"
+			role="presentation"
 			onclick={(e) => {
 				// Close on backdrop click (clicking the inner backdrop, not content)
 				if (e.target === e.currentTarget) closeLightbox();
