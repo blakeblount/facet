@@ -14,6 +14,7 @@ pub mod response;
 pub mod routes;
 pub mod services;
 pub mod storage;
+pub mod utils;
 
 pub use config::Config;
 pub use db::{create_pool, test_connection, DbConfig};

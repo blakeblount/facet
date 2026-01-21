@@ -26,6 +26,7 @@ use crate::repositories::{
 use crate::response::ApiResponse;
 use crate::routes::AppState;
 use crate::services::pdf::{generate_label_pdf, generate_receipt_pdf, LabelData, ReceiptData};
+use crate::utils::file_validation::validate_image_content_type;
 
 /// Query parameters for listing tickets.
 #[derive(Debug, Clone, Deserialize)]
@@ -1575,7 +1576,14 @@ pub async fn upload_photo(
     let (content_type, data) =
         file_data.ok_or_else(|| AppError::validation("No 'photo' field in request"))?;
 
-    // 7. Generate unique storage key
+    // 7. Validate magic bytes match Content-Type
+    if !validate_image_content_type(&data, &content_type) {
+        return Err(AppError::validation(
+            "File content does not match declared Content-Type. Only JPEG, PNG, and WebP images are allowed.",
+        ));
+    }
+
+    // 8. Generate unique storage key
     let photo_id = Uuid::new_v4();
     let extension = match content_type.as_str() {
         "image/jpeg" => "jpg",
@@ -1585,7 +1593,7 @@ pub async fn upload_photo(
     };
     let storage_key = format!("tickets/{}/{}.{}", ticket.ticket_id, photo_id, extension);
 
-    // 8. Upload to storage (S3 or local fallback)
+    // 9. Upload to storage (S3 or local fallback)
     let file_size = data.len() as i32;
     let url: String;
 
@@ -1621,7 +1629,7 @@ pub async fn upload_photo(
             .map_err(|e| AppError::server_error(format!("Failed to generate signed URL: {}", e)))?;
     }
 
-    // 9. Create database record
+    // 10. Create database record
     let photo = TicketPhotoRepository::create(
         &state.db,
         CreateTicketPhoto {
@@ -1634,7 +1642,7 @@ pub async fn upload_photo(
     )
     .await?;
 
-    // 10. Return response
+    // 11. Return response
     let response = UploadPhotoResponse { photo, url };
 
     Ok((StatusCode::CREATED, Json(ApiResponse::success(response))))
