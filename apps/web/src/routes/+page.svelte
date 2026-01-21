@@ -391,6 +391,7 @@
 
 	.lanes-container {
 		display: flex;
+		justify-content: center;
 		gap: var(--space-md);
 		flex: 1;
 		min-height: 0;

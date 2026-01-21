@@ -121,6 +121,7 @@
 		flex-direction: column;
 		gap: var(--space-lg);
 		max-width: 900px;
+		margin: 0 auto;
 	}
 
 	.admin-header {
